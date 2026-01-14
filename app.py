@@ -1,171 +1,206 @@
-from flask import Flask, request, render_template_string, jsonify
+from flask import Flask, request, render_template_string
 import sqlite3
 import hashlib
+import random
+import smtplib
+import os
+from email.mime.text import MIMEText
 
 app = Flask(__name__)
 
-# ================= DATABASE (SERVIDOR) =================
-conn = sqlite3.connect("users.db", check_same_thread=False)
-cursor = conn.cursor()
+# ================== CONFIG (SEGURA) ==================
+EMAIL_REMETENTE = os.environ.get("EMAIL_REMETENTE")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users(
-    username TEXT PRIMARY KEY,
-    password TEXT,
-    email TEXT,
-    nascimento TEXT
-)
-""")
-conn.commit()
+# ================== DATABASE ==================
+def get_db():
+    conn = sqlite3.connect("users.db")
+    conn.row_factory = sqlite3.Row
+    return conn
 
+# ================== HASH ==================
 def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
-# ================= CÓDIGOS TEMP =================
-codigos = {}  # email -> codigo
+# ================== EMAIL ==================
+def enviar_email(destino, assunto, mensagem):
+    msg = MIMEText(mensagem)
+    msg["Subject"] = assunto
+    msg["From"] = EMAIL_REMETENTE
+    msg["To"] = destino
 
-# ================= HTML =================
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(EMAIL_REMETENTE, EMAIL_PASSWORD)
+        server.send_message(msg)
+
+# ================== HTML ==================
 HTML = """
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-    <meta charset="UTF-8">
-    <title>Recuperar Conta</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { box-sizing: border-box; font-family: Arial, sans-serif; }
-        body {
-            margin: 0;
-            background: linear-gradient(135deg, #0f0f0f, #1c1c1c);
-            color: white;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .box {
-            background: #1e1e1e;
-            padding: 30px;
-            border-radius: 16px;
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
-        }
-        input, button {
-            width: 100%;
-            padding: 14px;
-            margin: 10px 0;
-            border-radius: 10px;
-            border: none;
-            font-size: 16px;
-        }
-        button {
-            background: #0a84ff;
-            color: white;
-            cursor: pointer;
-        }
-        @media (max-width: 600px) {
-            input, button { font-size: 20px; padding: 18px; }
-        }
-    </style>
+<meta charset="UTF-8">
+<title>Recuperar Conta</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {
+    margin: 0;
+    background: #0f0f0f;
+    color: white;
+    font-family: Arial;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+.box {
+    background: #1e1e1e;
+    padding: 30px;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+input, button {
+    width: 100%;
+    padding: 14px;
+    margin: 10px 0;
+    border-radius: 10px;
+    border: none;
+    font-size: 16px;
+}
+button {
+    background: #0a84ff;
+    color: white;
+    cursor: pointer;
+}
+a {
+    color: #0a84ff;
+    text-decoration: none;
+}
+@media (max-width: 600px) {
+    .box { max-width: 95%; }
+    input, button { font-size: 20px; padding: 18px; }
+}
+</style>
 </head>
+
 <body>
 <div class="box">
-    <h2>Recuperar conta</h2>
+<h2>Recuperar conta</h2>
 
-    {% if etapa == "email" %}
-    <form method="post">
-        <p>Introduz o email registado</p>
-        <input type="email" name="email" required>
-        <button>Enviar código</button>
-    </form>
-    {% endif %}
+{% if etapa == "menu" %}
+    <a href="/password">Recuperar password</a><br><br>
+    <a href="/utilizador">Recuperar utilizador</a>
+{% endif %}
 
-    {% if etapa == "codigo" %}
-    <p>Código enviado para:<br><b>{{ email }}</b></p>
-    <form method="post">
-        <input type="hidden" name="email" value="{{ email }}">
-        <input name="codigo" placeholder="Código recebido" required>
-        <input type="password" name="password" placeholder="Nova password" required>
-        <button>Alterar password</button>
-    </form>
-    {% endif %}
+{% if etapa == "email" %}
+<form method="post">
+    <input type="email" name="email" placeholder="Email registado" required>
+    <button type="submit">Enviar código</button>
+</form>
+{% endif %}
 
-    {% if etapa == "erro" %}
-    <p style="color:red;">{{ msg }}</p>
-    {% endif %}
+{% if etapa == "codigo" %}
+<p>Código enviado para:<br><b>{{ email }}</b></p>
+<form method="post">
+    <input type="hidden" name="email" value="{{ email }}">
+    <input type="text" name="codigo" placeholder="Código recebido" required>
+    <input type="password" name="password" placeholder="Nova password" required>
+    <button type="submit">Alterar password</button>
+</form>
+{% endif %}
 
-    {% if etapa == "sucesso" %}
-    <p>✅ Password alterada com sucesso</p>
-    {% endif %}
+{% if etapa == "sucesso" %}
+<p>✅ Operação concluída com sucesso</p>
+{% endif %}
+
+{% if erro %}
+<p style="color:red">{{ erro }}</p>
+{% endif %}
 </div>
 </body>
 </html>
 """
 
-# ================= SITE RECUPERAÇÃO =================
-@app.route("/", methods=["GET", "POST"])
-def recuperar():
+# ================== ROTAS ==================
+codigos = {}
+
+@app.route("/")
+def menu():
+    return render_template_string(HTML, etapa="menu")
+
+# -------- PASSWORD --------
+@app.route("/password", methods=["GET", "POST"])
+def recuperar_password():
     if request.method == "POST":
+        email = request.form.get("email")
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE email=?", (email,))
+        user = cur.fetchone()
 
-        if "codigo" in request.form:
-            email = request.form["email"]
-            codigo = request.form["codigo"]
-            nova = hash_password(request.form["password"])
+        if not user:
+            return render_template_string(HTML, etapa="email", erro="Email não encontrado")
 
-            if codigos.get(email) == codigo:
-                cursor.execute(
-                    "UPDATE users SET password=? WHERE email=?",
-                    (nova, email)
-                )
-                conn.commit()
-                codigos.pop(email)
-                return render_template_string(HTML, etapa="sucesso")
+        codigo = str(random.randint(100000, 999999))
+        codigos[email] = codigo
 
-            return render_template_string(HTML, etapa="erro", msg="Código inválido")
+        enviar_email(
+            email,
+            "Código de recuperação",
+            f"O seu código de recuperação é: {codigo}"
+        )
 
-        email = request.form["email"]
-        cursor.execute("SELECT * FROM users WHERE email=?", (email,))
-        if not cursor.fetchone():
-            return render_template_string(HTML, etapa="erro", msg="Email não encontrado")
-
-        codigos[email] = "1234"  # simulado
         return render_template_string(HTML, etapa="codigo", email=email)
+
+    if request.method == "POST" and "codigo" in request.form:
+        pass
 
     return render_template_string(HTML, etapa="email")
 
-# ================= API LOGIN =================
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.json
-    cursor.execute(
-        "SELECT * FROM users WHERE username=? AND password=?",
-        (data["username"], data["password"])
-    )
-    return jsonify(
-        status="ok" if cursor.fetchone() else "erro",
-        msg="Login inválido"
-    )
+@app.route("/password", methods=["POST"])
+def confirmar_password():
+    email = request.form.get("email")
+    codigo = request.form.get("codigo")
+    nova = request.form.get("password")
 
-# ================= API REGISTO =================
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
-    try:
-        cursor.execute(
-            "INSERT INTO users VALUES (?,?,?,?)",
-            (
-                data["username"],
-                data["password"],
-                data["email"],
-                data["nascimento"]
-            )
+    if codigos.get(email) != codigo:
+        return render_template_string(HTML, etapa="codigo", email=email, erro="Código inválido")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET password=? WHERE email=?",
+        (hash_password(nova), email)
+    )
+    conn.commit()
+    codigos.pop(email)
+
+    return render_template_string(HTML, etapa="sucesso")
+
+# -------- UTILIZADOR --------
+@app.route("/utilizador", methods=["GET", "POST"])
+def recuperar_utilizador():
+    if request.method == "POST":
+        email = request.form.get("email")
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT username FROM users WHERE email=?", (email,))
+        user = cur.fetchone()
+
+        if not user:
+            return render_template_string(HTML, etapa="email", erro="Email não encontrado")
+
+        enviar_email(
+            email,
+            "Recuperação de utilizador",
+            f"O seu utilizador é: {user['username']}"
         )
-        conn.commit()
-        return jsonify(status="ok")
-    except:
-        return jsonify(status="erro", msg="Utilizador já existe")
 
-# ================= START =================
+        return render_template_string(HTML, etapa="sucesso")
+
+    return render_template_string(HTML, etapa="email")
+
+# ================== START ==================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
