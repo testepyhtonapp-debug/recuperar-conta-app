@@ -1,1 +1,8 @@
-flask
+Flask
+Flask-Cors
+Flask-SQLAlchemy
+Authlib
+requests
+python-dotenv
+gunicorn
+
