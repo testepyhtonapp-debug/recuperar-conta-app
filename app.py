@@ -172,15 +172,8 @@ def reset_password():
 
     return jsonify(status="ok")
 
-# ================= START =================
-if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
-    @app.route("/")
-    
+# ================= HOME =================
+@app.route("/")
 def home():
     return jsonify(
         status="online",
@@ -194,3 +187,10 @@ def home():
         ]
     )
 
+# ================= START =================
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=False)
