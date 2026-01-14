@@ -29,18 +29,19 @@ db = SQLAlchemy(app)
 mail = Mail(app)
 oauth = OAuth(app)
 
+google = None
 if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
     google = oauth.register(
         name="google",
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
         access_token_url="https://oauth2.googleapis.com/token",
-        authorize_url="https://accounts.google.com/o/oauth2/auth",
-        api_base_url="https://www.googleapis.com/oauth2/v2/",
-        client_kwargs={"scope": "openid email profile"},
+        authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+        api_base_url="https://www.googleapis.com/",
+        client_kwargs={
+            "scope": "openid email profile"
+        },
     )
-else:
-    google = None
 
 # ================= MODELS =================
 class User(db.Model):
@@ -67,80 +68,104 @@ def gen_code():
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json
+
     if User.query.filter(
         (User.username == data["username"]) | (User.email == data["email"])
     ).first():
         return jsonify(status="error", msg="Conta já existe")
 
-    u = User(
+    user = User(
         username=data["username"],
         email=data["email"],
         password=data["password"]
     )
-    db.session.add(u)
+    db.session.add(user)
     db.session.commit()
+
     return jsonify(status="ok")
 
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
-    u = User.query.filter_by(
+
+    user = User.query.filter_by(
         username=data["username"],
         password=data["password"]
     ).first()
 
-    if not u:
+    if not user:
         return jsonify(status="error", msg="Dados inválidos")
+
     return jsonify(status="ok")
 
-# ================= GOOGLE =================
+# ================= GOOGLE LOGIN =================
 @app.route("/login/google")
 def login_google():
     if not google:
         return "Google login não configurado", 500
+
     return google.authorize_redirect(GOOGLE_REDIRECT_URI)
 
 @app.route("/login/google/callback")
 def google_callback():
     token = google.authorize_access_token()
-    user_info = google.get("userinfo").json()
 
-    user = User.query.filter_by(email=user_info["email"]).first()
+    resp = google.get("oauth2/v3/userinfo")
+    user_info = resp.json()
+
+    email = user_info.get("email")
+    google_id = user_info.get("sub")
+
+    if not email:
+        return "Erro ao obter dados do Google", 400
+
+    user = User.query.filter_by(email=email).first()
 
     if not user:
         user = User(
-            username=user_info["email"].split("@")[0],
-            email=user_info["email"],
-            google_id=user_info["id"],
+            username=email.split("@")[0],
+            email=email,
+            google_id=google_id,
             photo=user_info.get("picture")
         )
         db.session.add(user)
         db.session.commit()
 
-    return "Login Google efetuado com sucesso."
+    return jsonify(
+        status="ok",
+        message="Login Google efetuado com sucesso",
+        user={
+            "username": user.username,
+            "email": user.email,
+            "photo": user.photo
+        }
+    )
 
 # ================= RECOVER USERNAME =================
 @app.route("/recover-username", methods=["POST"])
 def recover_username():
     email = request.json["email"]
+
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify(status="error")
+        return jsonify(status="error", msg="Email não encontrado")
 
     send_email(
         email,
         "Recuperar Utilizador",
         f"O teu nome de utilizador é: {user.username}"
     )
+
     return jsonify(status="ok")
 
 # ================= RECOVER PASSWORD =================
 @app.route("/recover-password", methods=["POST"])
 def recover_password():
     email = request.json["email"]
+
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify(status="error")
+        return jsonify(status="error", msg="Email não encontrado")
 
     code = gen_code()
     user.reset_code = code
@@ -152,13 +177,14 @@ def recover_password():
         "Código de recuperação",
         f"O teu código é: {code}"
     )
+
     return jsonify(status="ok")
 
 @app.route("/reset-password", methods=["POST"])
 def reset_password():
     data = request.json
-    user = User.query.filter_by(email=data["email"]).first()
 
+    user = User.query.filter_by(email=data["email"]).first()
     if not user or user.reset_code != data["code"]:
         return jsonify(status="error", msg="Código inválido")
 
