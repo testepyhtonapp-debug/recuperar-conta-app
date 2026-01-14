@@ -1,6 +1,7 @@
 Flask
 Flask-Cors
 Flask-SQLAlchemy
+Flask-Mail
 Authlib
 requests
 python-dotenv
