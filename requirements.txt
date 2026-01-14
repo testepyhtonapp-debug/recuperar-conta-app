@@ -6,4 +6,3 @@ Authlib
 requests
 python-dotenv
 gunicorn
-
