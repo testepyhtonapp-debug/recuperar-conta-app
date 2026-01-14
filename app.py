@@ -1,203 +1,169 @@
-from flask import Flask, request, render_template_string
-import sqlite3
-import hashlib
-import random
-import smtplib
-import os
-from email.message import EmailMessage
+from flask import Flask, request, jsonify, redirect
+from flask_sqlalchemy import SQLAlchemy
+from flask_mail import Mail, Message
+from authlib.integrations.flask_client import OAuth
+import os, random, string, datetime
 
 app = Flask(__name__)
 
-# ================= DATABASE =================
-def get_db():
-    conn = sqlite3.connect("users.db", check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+# ================= CONFIG =================
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
+app.config["SECRET_KEY"] = "super-secret-key"
 
-def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            email TEXT UNIQUE,
-            password TEXT
+# EMAIL
+app.config["MAIL_SERVER"] = "smtp.gmail.com"
+app.config["MAIL_PORT"] = 587
+app.config["MAIL_USE_TLS"] = True
+app.config["MAIL_USERNAME"] = os.environ.get("EMAIL_USER")
+app.config["MAIL_PASSWORD"] = os.environ.get("EMAIL_PASS")
+
+# GOOGLE
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI")
+
+db = SQLAlchemy(app)
+mail = Mail(app)
+oauth = OAuth(app)
+
+google = oauth.register(
+    name="google",
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    access_token_url="https://oauth2.googleapis.com/token",
+    authorize_url="https://accounts.google.com/o/oauth2/auth",
+    api_base_url="https://www.googleapis.com/oauth2/v2/",
+    client_kwargs={"scope": "openid email profile"}
+)
+
+# ================= MODELS =================
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True)
+    email = db.Column(db.String(120), unique=True)
+    password = db.Column(db.String(256))
+    google_id = db.Column(db.String(200))
+    photo = db.Column(db.String(300))
+    reset_code = db.Column(db.String(10))
+    reset_expire = db.Column(db.DateTime)
+
+# ================= UTILS =================
+def send_email(to, subject, body):
+    msg = Message(subject, recipients=[to], body=body)
+    mail.send(msg)
+
+def gen_code():
+    return "".join(random.choices(string.digits, k=6))
+
+# ================= AUTH =================
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    if User.query.filter(
+        (User.username == data["username"]) | (User.email == data["email"])
+    ).first():
+        return jsonify(status="error", msg="Conta já existe")
+
+    u = User(
+        username=data["username"],
+        email=data["email"],
+        password=data["password"]
+    )
+    db.session.add(u)
+    db.session.commit()
+    return jsonify(status="ok")
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+    u = User.query.filter_by(
+        username=data["username"],
+        password=data["password"]
+    ).first()
+
+    if not u:
+        return jsonify(status="error", msg="Dados inválidos")
+    return jsonify(status="ok")
+
+# ================= GOOGLE =================
+@app.route("/login/google")
+def login_google():
+    return google.authorize_redirect(GOOGLE_REDIRECT_URI)
+
+@app.route("/login/google/callback")
+def google_callback():
+    token = google.authorize_access_token()
+    user_info = google.get("userinfo").json()
+
+    user = User.query.filter_by(email=user_info["email"]).first()
+
+    if not user:
+        user = User(
+            username=user_info["email"].split("@")[0],
+            email=user_info["email"],
+            google_id=user_info["id"],
+            photo=user_info.get("picture")
         )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS reset_codes (
-            email TEXT,
-            code TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+        db.session.add(user)
+        db.session.commit()
 
-init_db()
+    return "Login Google efetuado com sucesso. Pode fechar esta janela."
 
-# ================= EMAIL =================
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
+# ================= RECOVER USERNAME =================
+@app.route("/recover-username", methods=["POST"])
+def recover_username():
+    email = request.json["email"]
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error")
 
-def enviar_email(destino, assunto, corpo):
-    msg = EmailMessage()
-    msg["From"] = EMAIL_USER
-    msg["To"] = destino
-    msg["Subject"] = assunto
-    msg.set_content(corpo)
+    send_email(
+        email,
+        "Recuperar Utilizador",
+        f"O teu nome de utilizador é: {user.username}"
+    )
+    return jsonify(status="ok")
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(EMAIL_USER, EMAIL_PASS)
-        smtp.send_message(msg)
+# ================= RECOVER PASSWORD =================
+@app.route("/recover-password", methods=["POST"])
+def recover_password():
+    email = request.json["email"]
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error")
 
-# ================= HTML =================
-HTML = """
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-<meta charset="UTF-8">
-<title>Recuperar Conta</title>
-<style>
-body {
-    background:#111;
-    color:white;
-    font-family:Arial;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    height:100vh;
-}
-.box {
-    background:#1e1e1e;
-    padding:30px;
-    border-radius:15px;
-    width:350px;
-    text-align:center;
-}
-input, button {
-    width:100%;
-    padding:14px;
-    margin-top:10px;
-    border-radius:8px;
-    border:none;
-}
-button {
-    background:#0a84ff;
-    color:white;
-    cursor:pointer;
-}
-</style>
-</head>
-<body>
+    code = gen_code()
+    user.reset_code = code
+    user.reset_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+    db.session.commit()
 
-<div class="box">
-<h2>Recuperar Password</h2>
+    send_email(
+        email,
+        "Código de recuperação",
+        f"O teu código é: {code}"
+    )
+    return jsonify(status="ok")
 
-{% if etapa == "email" %}
-<form method="post">
-    <input type="hidden" name="acao" value="enviar_codigo">
-    <input type="email" name="email" placeholder="Email" required>
-    <button>Enviar email</button>
-</form>
-{% endif %}
+@app.route("/reset-password", methods=["POST"])
+def reset_password():
+    data = request.json
+    user = User.query.filter_by(email=data["email"]).first()
 
-{% if etapa == "codigo" %}
-<form method="post">
-    <input type="hidden" name="acao" value="confirmar">
-    <input type="hidden" name="email" value="{{ email }}">
-    <input type="text" name="code" placeholder="Código recebido" required>
-    <input type="password" name="password" placeholder="Nova password" required>
-    <button>Alterar password</button>
-</form>
-{% endif %}
+    if not user or user.reset_code != data["code"]:
+        return jsonify(status="error", msg="Código inválido")
 
-{% if etapa == "resultado" %}
-<p>{{ mensagem }}</p>
-<a href="/">Voltar</a>
-{% endif %}
+    if datetime.datetime.utcnow() > user.reset_expire:
+        return jsonify(status="error", msg="Código expirado")
 
-</div>
-</body>
-</html>
-"""
+    user.password = data["new_password"]
+    user.reset_code = None
+    user.reset_expire = None
+    db.session.commit()
 
-# ================= ROUTE =================
-@app.route("/", methods=["GET", "POST"])
-def index():
-    conn = get_db()
-    c = conn.cursor()
-
-    if request.method == "POST":
-        acao = request.form.get("acao")
-
-        # 1️⃣ Enviar código
-        if acao == "enviar_codigo":
-            email = request.form.get("email")
-
-            c.execute("SELECT * FROM users WHERE email=?", (email,))
-            user = c.fetchone()
-            if not user:
-                return render_template_string(
-                    HTML,
-                    etapa="resultado",
-                    mensagem="Email não encontrado"
-                )
-
-            code = str(random.randint(100000, 999999))
-
-            c.execute("DELETE FROM reset_codes WHERE email=?", (email,))
-            c.execute(
-                "INSERT INTO reset_codes (email, code) VALUES (?,?)",
-                (email, code)
-            )
-            conn.commit()
-
-            enviar_email(
-                email,
-                "Recuperação de Password",
-                f"O teu código de recuperação é: {code}"
-            )
-
-            return render_template_string(
-                HTML,
-                etapa="codigo",
-                email=email
-            )
-
-        # 2️⃣ Confirmar código + nova password
-        if acao == "confirmar":
-            email = request.form.get("email")
-            code = request.form.get("code")
-            password = request.form.get("password")
-
-            c.execute(
-                "SELECT * FROM reset_codes WHERE email=? AND code=?",
-                (email, code)
-            )
-            valid = c.fetchone()
-            if not valid:
-                return render_template_string(
-                    HTML,
-                    etapa="resultado",
-                    mensagem="Código inválido"
-                )
-
-            hashed = hashlib.sha256(password.encode()).hexdigest()
-            c.execute(
-                "UPDATE users SET password=? WHERE email=?",
-                (hashed, email)
-            )
-            c.execute("DELETE FROM reset_codes WHERE email=?", (email,))
-            conn.commit()
-
-            return render_template_string(
-                HTML,
-                etapa="resultado",
-                mensagem="Password alterada com sucesso!"
-            )
-
-    return render_template_string(HTML, etapa="email")
+    return jsonify(status="ok")
 
 # ================= START =================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    with app.app_context():
+        db.create_all()
+    app.run()
