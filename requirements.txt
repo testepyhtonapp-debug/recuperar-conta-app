@@ -6,6 +6,4 @@ Authlib
 requests
 python-dotenv
 gunicorn
-git add requirements.txt
-git commit -m "fix: add Flask-Mail"
-git push
+
