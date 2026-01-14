@@ -12,17 +12,18 @@ def inicio():
         <title>Recuperar Conta</title>
         <style>
             body {
-                background:#fafafa;
+                background:#121212;
                 font-family:Arial;
                 display:flex;
                 justify-content:center;
                 align-items:center;
                 height:100vh;
+                color:white;
             }
             .box {
-                background:white;
+                background:#1e1e1e;
                 padding:30px;
-                border:1px solid #dbdbdb;
+                border-radius:10px;
                 width:320px;
                 text-align:center;
             }
@@ -34,7 +35,7 @@ def inicio():
                 border:none;
                 color:white;
                 font-weight:bold;
-                border-radius:5px;
+                border-radius:6px;
                 cursor:pointer;
             }
         </style>
@@ -52,12 +53,10 @@ def inicio():
 # ================== RECUPERAR PASSWORD ==================
 @app.route("/recuperar/password", methods=["GET", "POST"])
 def recuperar_password():
-    mostrar_form_codigo = False
-    email = ""
+    email = None
 
     if request.method == "POST":
         email = request.form.get("email")
-        mostrar_form_codigo = True
 
     return f"""
     <html>
@@ -66,17 +65,18 @@ def recuperar_password():
         <title>Recuperar Password</title>
         <style>
             body {{
-                background:#fafafa;
+                background:#121212;
                 font-family:Arial;
                 display:flex;
                 justify-content:center;
                 align-items:center;
                 height:100vh;
+                color:white;
             }}
             .box {{
-                background:white;
+                background:#1e1e1e;
                 padding:30px;
-                border:1px solid #dbdbdb;
+                border-radius:10px;
                 width:320px;
                 text-align:center;
             }}
@@ -84,8 +84,8 @@ def recuperar_password():
                 width:100%;
                 padding:10px;
                 margin:8px 0;
-                border-radius:5px;
-                border:1px solid #ccc;
+                border-radius:6px;
+                border:none;
             }}
             button {{
                 width:100%;
@@ -94,32 +94,43 @@ def recuperar_password():
                 border:none;
                 color:white;
                 font-weight:bold;
-                border-radius:5px;
+                border-radius:6px;
                 cursor:pointer;
+            }}
+            .info {{
+                margin:15px 0;
+                color:#aaa;
+                font-size:14px;
             }}
         </style>
     </head>
     <body>
         <div class="box">
-            <h3>Recuperar password</h3>
 
-            <form method="POST">
-                <input type="email" name="email" placeholder="Email registado" required>
-                <button type="submit">Enviar código</button>
-            </form>
+        {""
+        if email else
+        '''
+        <h3>Recuperar password</h3>
+        <form method="POST">
+            <input type="email" name="email" placeholder="Email registado" required>
+            <button type="submit">Enviar código</button>
+        </form>
+        '''
+        }
 
-            {"<hr><p>Código enviado para: "+email+"</p>" if mostrar_form_codigo else ""}
+        {""
+        if not email else
+        f'''
+        <h3>Alterar password</h3>
+        <p class="info">Código enviado para:<br>{email}</p>
+        <form method="POST" action="/recuperar/password/alterar">
+            <input type="text" name="codigo" placeholder="Código recebido" required>
+            <input type="password" name="password" placeholder="Nova password" required>
+            <button type="submit">Alterar password</button>
+        </form>
+        '''
+        }
 
-            {""
-            if not mostrar_form_codigo else
-            '''
-            <form method="POST" action="/recuperar/password/alterar">
-                <input type="text" name="codigo" placeholder="Código recebido" required>
-                <input type="password" name="password" placeholder="Nova password" required>
-                <button type="submit">Alterar password</button>
-            </form>
-            '''
-            }
         </div>
     </body>
     </html>
@@ -127,12 +138,33 @@ def recuperar_password():
 
 @app.route("/recuperar/password/alterar", methods=["POST"])
 def alterar_password():
-    codigo = request.form.get("codigo")
-    password = request.form.get("password")
-
-    return f"""
-    <h3>Password alterada com sucesso!</h3>
-    <p>Código usado: {codigo}</p>
+    return """
+    <html>
+    <head>
+        <style>
+            body {
+                background:#121212;
+                font-family:Arial;
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                height:100vh;
+                color:white;
+            }
+            .box {
+                background:#1e1e1e;
+                padding:30px;
+                border-radius:10px;
+                text-align:center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <h3>Password alterada com sucesso ✅</h3>
+        </div>
+    </body>
+    </html>
     """
 
 # ================== RECUPERAR UTILIZADOR ==================
@@ -152,17 +184,18 @@ def recuperar_utilizador():
         <title>Recuperar Utilizador</title>
         <style>
             body {{
-                background:#fafafa;
+                background:#121212;
                 font-family:Arial;
                 display:flex;
                 justify-content:center;
                 align-items:center;
                 height:100vh;
+                color:white;
             }}
             .box {{
-                background:white;
+                background:#1e1e1e;
                 padding:30px;
-                border:1px solid #dbdbdb;
+                border-radius:10px;
                 width:320px;
                 text-align:center;
             }}
@@ -170,8 +203,8 @@ def recuperar_utilizador():
                 width:100%;
                 padding:10px;
                 margin:8px 0;
-                border-radius:5px;
-                border:1px solid #ccc;
+                border-radius:6px;
+                border:none;
             }}
             button {{
                 width:100%;
@@ -180,20 +213,33 @@ def recuperar_utilizador():
                 border:none;
                 color:white;
                 font-weight:bold;
-                border-radius:5px;
+                border-radius:6px;
                 cursor:pointer;
+            }}
+            .info {{
+                margin-top:15px;
+                color:#aaa;
             }}
         </style>
     </head>
     <body>
         <div class="box">
             <h3>Recuperar utilizador</h3>
+
+            {""
+            if enviado else
+            '''
             <form method="POST">
                 <input type="email" name="email" placeholder="Email registado" required>
-                <button type="submit">Enviar utilizador</button>
+                <button type="submit">Enviar</button>
             </form>
+            '''
+            }
 
-            {"<p>Utilizador enviado para o email: "+email+"</p>" if enviado else ""}
+            {""
+            if not enviado else
+            f'<p class="info">Utilizador enviado para:<br>{email}</p>'
+            }
         </div>
     </body>
     </html>
