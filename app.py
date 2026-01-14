@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from authlib.integrations.flask_client import OAuth
@@ -7,17 +7,20 @@ import os, random, string, datetime
 app = Flask(__name__)
 
 # ================= CONFIG =================
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
-app.config["SECRET_KEY"] = "super-secret-key"
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# EMAIL
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
+
+# ================= EMAIL =================
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.environ.get("EMAIL_USER")
 app.config["MAIL_PASSWORD"] = os.environ.get("EMAIL_PASS")
 
-# GOOGLE
+# ================= GOOGLE =================
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI")
@@ -26,15 +29,18 @@ db = SQLAlchemy(app)
 mail = Mail(app)
 oauth = OAuth(app)
 
-google = oauth.register(
-    name="google",
-    client_id=GOOGLE_CLIENT_ID,
-    client_secret=GOOGLE_CLIENT_SECRET,
-    access_token_url="https://oauth2.googleapis.com/token",
-    authorize_url="https://accounts.google.com/o/oauth2/auth",
-    api_base_url="https://www.googleapis.com/oauth2/v2/",
-    client_kwargs={"scope": "openid email profile"}
-)
+if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+    google = oauth.register(
+        name="google",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        access_token_url="https://oauth2.googleapis.com/token",
+        authorize_url="https://accounts.google.com/o/oauth2/auth",
+        api_base_url="https://www.googleapis.com/oauth2/v2/",
+        client_kwargs={"scope": "openid email profile"},
+    )
+else:
+    google = None
 
 # ================= MODELS =================
 class User(db.Model):
@@ -49,6 +55,8 @@ class User(db.Model):
 
 # ================= UTILS =================
 def send_email(to, subject, body):
+    if not app.config["MAIL_USERNAME"]:
+        return
     msg = Message(subject, recipients=[to], body=body)
     mail.send(msg)
 
@@ -88,6 +96,8 @@ def login():
 # ================= GOOGLE =================
 @app.route("/login/google")
 def login_google():
+    if not google:
+        return "Google login não configurado", 500
     return google.authorize_redirect(GOOGLE_REDIRECT_URI)
 
 @app.route("/login/google/callback")
@@ -107,7 +117,7 @@ def google_callback():
         db.session.add(user)
         db.session.commit()
 
-    return "Login Google efetuado com sucesso. Pode fechar esta janela."
+    return "Login Google efetuado com sucesso."
 
 # ================= RECOVER USERNAME =================
 @app.route("/recover-username", methods=["POST"])
@@ -166,4 +176,6 @@ def reset_password():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run()
+
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=False)
