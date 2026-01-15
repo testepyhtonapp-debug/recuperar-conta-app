@@ -144,13 +144,12 @@ def google_callback():
     db.session.commit()
     session["user_id"] = user.id
 
-        return f"""
+    return f"""
 <!DOCTYPE html>
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
 <title>Login Google OK</title>
-
 <style>
 body {{
   margin: 0;
@@ -162,7 +161,6 @@ body {{
   font-family: Arial, Helvetica, sans-serif;
   color: white;
 }}
-
 .box {{
   background: #020617;
   padding: 50px;
@@ -172,32 +170,19 @@ body {{
   text-align: center;
   box-shadow: 0 20px 40px rgba(0,0,0,0.7);
 }}
-
-h1 {{
-  font-size: 36px;
-  color: #22c55e;
-}}
-
-p {{
-  font-size: 20px;
-}}
-
+h1 {{ font-size: 36px; color: #22c55e; }}
+p {{ font-size: 20px; }}
 table {{
   width: 100%;
   border-collapse: collapse;
   margin: 30px 0;
   font-size: 18px;
 }}
-
 th, td {{
   border: 1px solid #334155;
   padding: 14px;
 }}
-
-th {{
-  color: #38bdf8;
-}}
-
+th {{ color: #38bdf8; }}
 .code {{
   margin-top: 20px;
   font-size: 22px;
@@ -208,7 +193,6 @@ th {{
   background: #020617;
   word-break: break-all;
 }}
-
 .timer {{
   margin-top: 15px;
   font-size: 18px;
@@ -216,55 +200,33 @@ th {{
 }}
 </style>
 </head>
-
 <body>
 <div class="box">
   <h1>Login Google OK ✅</h1>
   <p>Pode voltar para a aplicação</p>
 
   <table>
-    <tr>
-      <th>O que fazer</th>
-      <th>O que acontece</th>
-    </tr>
-    <tr>
-      <td>Copiar o código abaixo</td>
-      <td>Permite iniciar sessão no aplicativo</td>
-    </tr>
-    <tr>
-      <td>Usar no aplicativo</td>
-      <td>Login automático</td>
-    </tr>
-    <tr>
-      <td>Esperar mais de 5 minutos</td>
-      <td>Código expira</td>
-    </tr>
-    <tr>
-      <td>Tentar reutilizar</td>
-      <td>Não funciona (uso único)</td>
-    </tr>
+    <tr><th>O que fazer</th><th>O que acontece</th></tr>
+    <tr><td>Copiar o código</td><td>Login no aplicativo</td></tr>
+    <tr><td>Usar no app</td><td>Login automático</td></tr>
+    <tr><td>Esperar 5 minutos</td><td>Código expira</td></tr>
+    <tr><td>Tentar reutilizar</td><td>Não funciona</td></tr>
   </table>
 
-  <div class="code">
-    Código: {user.google_token}
-  </div>
-
+  <div class="code">Código: {user.google_token}</div>
   <div id="timer" class="timer"></div>
 </div>
 
 <script>
 let tempo = 300;
-
 function atualizar() {{
-  let min = Math.floor(tempo / 60);
-  let sec = tempo % 60;
+  let m = Math.floor(tempo / 60);
+  let s = tempo % 60;
   document.getElementById("timer").innerText =
-    "⏱️ Código válido por " + min + ":" + sec.toString().padStart(2, "0") + " minutos";
-
+    "⏱️ Código válido por " + m + ":" + s.toString().padStart(2,"0") + " minutos";
   tempo--;
   if (tempo >= 0) setTimeout(atualizar, 1000);
 }}
-
 atualizar();
 </script>
 </body>
@@ -304,11 +266,7 @@ def google_login_tk():
     if not user:
         return jsonify(status="error")
 
-    return jsonify(
-        status="ok",
-        nome=user.username,
-        email=user.email
-    )
+    return jsonify(status="ok", nome=user.username, email=user.email)
 
 # ================= LOGOUT =================
 @app.route("/logout")
