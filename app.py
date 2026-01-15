@@ -47,6 +47,12 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True)
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(256))
+
+    # 🔽 CAMPOS ADICIONADOS (SEM REMOVER OS EXISTENTES)
+    google_name = db.Column(db.String(120))
+    google_picture = db.Column(db.String(300))
+    provider = db.Column(db.String(20), default="local")
+
     reset_code = db.Column(db.String(10))
     reset_expire = db.Column(db.DateTime)
 
@@ -77,7 +83,8 @@ def register():
     user = User(
         username=data["username"],
         email=data["email"],
-        password=generate_password_hash(data["password"])
+        password=generate_password_hash(data["password"]),
+        provider="local"
     )
     db.session.add(user)
     db.session.commit()
@@ -92,6 +99,7 @@ def login():
     if not user or not check_password_hash(user.password, data["password"]):
         return jsonify(status="error", msg="Dados inválidos")
 
+    session["user_id"] = user.id
     return jsonify(status="ok")
 
 # ================= GOOGLE LOGIN =================
@@ -106,20 +114,58 @@ def google_callback():
     info = google.get("userinfo").json()
 
     email = info["email"]
-    username = info.get("name", email.split("@")[0])
+    google_name = info.get("name")
+    google_picture = info.get("picture")
+    username = google_name or email.split("@")[0]
 
     user = User.query.filter_by(email=email).first()
+
     if not user:
         user = User(
             username=username,
             email=email,
-            password="google"
+            password="google",
+            google_name=google_name,
+            google_picture=google_picture,
+            provider="google"
         )
         db.session.add(user)
-        db.session.commit()
+    else:
+        # Atualiza dados Google (caso mudem)
+        user.google_name = google_name
+        user.google_picture = google_picture
+        user.provider = "google"
 
+    db.session.commit()
     session["user_id"] = user.id
+
     return "<h2>Login Google OK ✅</h2><p>Pode voltar para a aplicação.</p>"
+
+# ================= PERFIL / DADOS DO UTILIZADOR =================
+@app.route("/me")
+def me():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify(status="error", msg="Não autenticado"), 401
+
+    user = User.query.get(user_id)
+
+    return jsonify(
+        status="ok",
+        user={
+            "username": user.username,
+            "email": user.email,
+            "google_name": user.google_name,
+            "google_picture": user.google_picture,
+            "provider": user.provider
+        }
+    )
+
+# ================= LOGOUT =================
+@app.route("/logout")
+def logout():
+    session.clear()
+    return jsonify(status="ok")
 
 # ================= START =================
 if __name__ == "__main__":
