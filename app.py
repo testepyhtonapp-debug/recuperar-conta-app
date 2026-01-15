@@ -1,13 +1,17 @@
-from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
+from flask import Flask, request, jsonify, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os, random, string, datetime
 
 # ================= APP =================
 app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+# 🔥 FORÇAR HTTPS ATRÁS DO RENDER (ESSENCIAL)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # ================= CONFIG =================
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
