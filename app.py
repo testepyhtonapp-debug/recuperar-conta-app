@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from authlib.integrations.flask_client import OAuth
+from werkzeug.security import generate_password_hash, check_password_hash
 import os, random, string, datetime
 
 app = Flask(__name__)
@@ -20,28 +21,8 @@ app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.environ.get("EMAIL_USER")
 app.config["MAIL_PASSWORD"] = os.environ.get("EMAIL_PASS")
 
-# ================= GOOGLE =================
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI")
-
 db = SQLAlchemy(app)
 mail = Mail(app)
-oauth = OAuth(app)
-
-google = None
-if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
-    google = oauth.register(
-        name="google",
-        client_id=GOOGLE_CLIENT_ID,
-        client_secret=GOOGLE_CLIENT_SECRET,
-        access_token_url="https://oauth2.googleapis.com/token",
-        authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
-        api_base_url="https://www.googleapis.com/",
-        client_kwargs={
-            "scope": "openid email profile"
-        },
-    )
 
 # ================= MODELS =================
 class User(db.Model):
@@ -49,8 +30,6 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True)
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(256))
-    google_id = db.Column(db.String(200))
-    photo = db.Column(db.String(300))
     reset_code = db.Column(db.String(10))
     reset_expire = db.Column(db.DateTime)
 
@@ -64,7 +43,99 @@ def send_email(to, subject, body):
 def gen_code():
     return "".join(random.choices(string.digits, k=6))
 
-# ================= AUTH =================
+# ================= HOME / FRONTEND =================
+@app.route("/")
+def home():
+    return render_template_string("""
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Recuperar Conta</title>
+<style>
+body { font-family: Arial; background:#f4f4f4; padding:40px }
+.card { background:#fff; padding:20px; max-width:420px; margin:auto; border-radius:8px }
+button { width:100%; padding:10px; margin-top:10px; cursor:pointer }
+input { width:100%; padding:8px; margin-top:5px }
+.hidden { display:none }
+#msg { margin-top:15px; font-weight:bold }
+</style>
+</head>
+<body>
+
+<div class="card">
+<h2>Recuperar Conta</h2>
+
+<button onclick="show('user')">👤 Recuperar Utilizador</button>
+<button onclick="show('pass')">🔐 Recuperar Palavra-passe</button>
+
+<div id="user" class="hidden">
+<h3>Recuperar utilizador</h3>
+<input id="userEmail" placeholder="Email">
+<button onclick="recoverUsername()">Enviar</button>
+</div>
+
+<div id="pass" class="hidden">
+<h3>Recuperar palavra-passe</h3>
+<input id="passEmail" placeholder="Email">
+<button onclick="sendCode()">Enviar código</button>
+
+<input id="code" placeholder="Código recebido">
+<input id="newPass" type="password" placeholder="Nova password">
+<button onclick="resetPass()">Alterar password</button>
+</div>
+
+<p id="msg"></p>
+</div>
+
+<script>
+function show(id){
+ document.getElementById('user').classList.add('hidden')
+ document.getElementById('pass').classList.add('hidden')
+ document.getElementById(id).classList.remove('hidden')
+ document.getElementById('msg').innerText = ''
+}
+
+function recoverUsername(){
+ fetch('/recover-username',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({email:userEmail.value})
+ }).then(r=>r.json()).then(d=>{
+  msg.innerText = d.msg || 'Email enviado'
+ })
+}
+
+function sendCode(){
+ fetch('/recover-password',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({email:passEmail.value})
+ }).then(r=>r.json()).then(d=>{
+  msg.innerText = d.msg || 'Código enviado'
+ })
+}
+
+function resetPass(){
+ fetch('/reset-password',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+    email:passEmail.value,
+    code:code.value,
+    new_password:newPass.value
+  })
+ }).then(r=>r.json()).then(d=>{
+  msg.innerText = d.msg || 'Password alterada'
+ })
+}
+</script>
+
+</body>
+</html>
+""")
+
+# ================= REGISTER =================
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json
@@ -77,76 +148,30 @@ def register():
     user = User(
         username=data["username"],
         email=data["email"],
-        password=data["password"]
+        password=generate_password_hash(data["password"])
     )
     db.session.add(user)
     db.session.commit()
 
     return jsonify(status="ok")
 
+# ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
+    user = User.query.filter_by(username=data["username"]).first()
 
-    user = User.query.filter_by(
-        username=data["username"],
-        password=data["password"]
-    ).first()
-
-    if not user:
+    if not user or not check_password_hash(user.password, data["password"]):
         return jsonify(status="error", msg="Dados inválidos")
 
     return jsonify(status="ok")
-
-# ================= GOOGLE LOGIN =================
-@app.route("/login/google")
-def login_google():
-    if not google:
-        return "Google login não configurado", 500
-
-    return google.authorize_redirect(GOOGLE_REDIRECT_URI)
-
-@app.route("/login/google/callback")
-def google_callback():
-    token = google.authorize_access_token()
-
-    resp = google.get("oauth2/v3/userinfo")
-    user_info = resp.json()
-
-    email = user_info.get("email")
-    google_id = user_info.get("sub")
-
-    if not email:
-        return "Erro ao obter dados do Google", 400
-
-    user = User.query.filter_by(email=email).first()
-
-    if not user:
-        user = User(
-            username=email.split("@")[0],
-            email=email,
-            google_id=google_id,
-            photo=user_info.get("picture")
-        )
-        db.session.add(user)
-        db.session.commit()
-
-    return jsonify(
-        status="ok",
-        message="Login Google efetuado com sucesso",
-        user={
-            "username": user.username,
-            "email": user.email,
-            "photo": user.photo
-        }
-    )
 
 # ================= RECOVER USERNAME =================
 @app.route("/recover-username", methods=["POST"])
 def recover_username():
     email = request.json["email"]
-
     user = User.query.filter_by(email=email).first()
+
     if not user:
         return jsonify(status="error", msg="Email não encontrado")
 
@@ -156,14 +181,14 @@ def recover_username():
         f"O teu nome de utilizador é: {user.username}"
     )
 
-    return jsonify(status="ok")
+    return jsonify(status="ok", msg="Email enviado")
 
 # ================= RECOVER PASSWORD =================
 @app.route("/recover-password", methods=["POST"])
 def recover_password():
     email = request.json["email"]
-
     user = User.query.filter_by(email=email).first()
+
     if not user:
         return jsonify(status="error", msg="Email não encontrado")
 
@@ -178,40 +203,26 @@ def recover_password():
         f"O teu código é: {code}"
     )
 
-    return jsonify(status="ok")
+    return jsonify(status="ok", msg="Código enviado")
 
+# ================= RESET PASSWORD =================
 @app.route("/reset-password", methods=["POST"])
 def reset_password():
     data = request.json
-
     user = User.query.filter_by(email=data["email"]).first()
+
     if not user or user.reset_code != data["code"]:
         return jsonify(status="error", msg="Código inválido")
 
     if datetime.datetime.utcnow() > user.reset_expire:
         return jsonify(status="error", msg="Código expirado")
 
-    user.password = data["new_password"]
+    user.password = generate_password_hash(data["new_password"])
     user.reset_code = None
     user.reset_expire = None
     db.session.commit()
 
-    return jsonify(status="ok")
-
-# ================= HOME =================
-@app.route("/")
-def home():
-    return jsonify(
-        status="online",
-        endpoints=[
-            "/register",
-            "/login",
-            "/login/google",
-            "/recover-username",
-            "/recover-password",
-            "/reset-password"
-        ]
-    )
+    return jsonify(status="ok", msg="Password alterada")
 
 # ================= START =================
 if __name__ == "__main__":
