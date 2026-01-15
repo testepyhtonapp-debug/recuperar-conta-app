@@ -144,11 +144,132 @@ def google_callback():
     db.session.commit()
     session["user_id"] = user.id
 
-    return f"""
-    <h2>Login Google OK ✅</h2>
-    <p>Pode voltar para a aplicação.</p>
-    <p><b>Código:</b> {user.google_token}</p>
-    """
+        return f"""
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Login Google OK</title>
+
+<style>
+body {{
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #020617, #1e293b);
+  font-family: Arial, Helvetica, sans-serif;
+  color: white;
+}}
+
+.box {{
+  background: #020617;
+  padding: 50px;
+  border-radius: 16px;
+  max-width: 750px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.7);
+}}
+
+h1 {{
+  font-size: 36px;
+  color: #22c55e;
+}}
+
+p {{
+  font-size: 20px;
+}}
+
+table {{
+  width: 100%;
+  border-collapse: collapse;
+  margin: 30px 0;
+  font-size: 18px;
+}}
+
+th, td {{
+  border: 1px solid #334155;
+  padding: 14px;
+}}
+
+th {{
+  color: #38bdf8;
+}}
+
+.code {{
+  margin-top: 20px;
+  font-size: 22px;
+  font-weight: bold;
+  padding: 18px;
+  border-radius: 10px;
+  border: 1px dashed #38bdf8;
+  background: #020617;
+  word-break: break-all;
+}}
+
+.timer {{
+  margin-top: 15px;
+  font-size: 18px;
+  color: #f87171;
+}}
+</style>
+</head>
+
+<body>
+<div class="box">
+  <h1>Login Google OK ✅</h1>
+  <p>Pode voltar para a aplicação</p>
+
+  <table>
+    <tr>
+      <th>O que fazer</th>
+      <th>O que acontece</th>
+    </tr>
+    <tr>
+      <td>Copiar o código abaixo</td>
+      <td>Permite iniciar sessão no aplicativo</td>
+    </tr>
+    <tr>
+      <td>Usar no aplicativo</td>
+      <td>Login automático</td>
+    </tr>
+    <tr>
+      <td>Esperar mais de 5 minutos</td>
+      <td>Código expira</td>
+    </tr>
+    <tr>
+      <td>Tentar reutilizar</td>
+      <td>Não funciona (uso único)</td>
+    </tr>
+  </table>
+
+  <div class="code">
+    Código: {user.google_token}
+  </div>
+
+  <div id="timer" class="timer"></div>
+</div>
+
+<script>
+let tempo = 300;
+
+function atualizar() {{
+  let min = Math.floor(tempo / 60);
+  let sec = tempo % 60;
+  document.getElementById("timer").innerText =
+    "⏱️ Código válido por " + min + ":" + sec.toString().padStart(2, "0") + " minutos";
+
+  tempo--;
+  if (tempo >= 0) setTimeout(atualizar, 1000);
+}}
+
+atualizar();
+</script>
+</body>
+</html>
+"""
 
 # ================= PERFIL / ME =================
 @app.route("/me")
