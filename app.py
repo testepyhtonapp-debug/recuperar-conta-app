@@ -4,7 +4,7 @@ from flask_mail import Mail, Message
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
-import os, random, string, datetime
+import os, random, string, datetime, uuid
 
 # ================= APP =================
 app = Flask(__name__)
@@ -48,10 +48,13 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True)
     password = db.Column(db.String(256))
 
-    # 🔽 CAMPOS ADICIONADOS (SEM REMOVER OS EXISTENTES)
+    # dados google
     google_name = db.Column(db.String(120))
     google_picture = db.Column(db.String(300))
     provider = db.Column(db.String(20), default="local")
+
+    # token para Tkinter
+    google_token = db.Column(db.String(64), unique=True)
 
     reset_code = db.Column(db.String(10))
     reset_expire = db.Column(db.DateTime)
@@ -131,17 +134,23 @@ def google_callback():
         )
         db.session.add(user)
     else:
-        # Atualiza dados Google (caso mudem)
         user.google_name = google_name
         user.google_picture = google_picture
         user.provider = "google"
 
+    # 🔑 token para o Tkinter
+    user.google_token = uuid.uuid4().hex
+
     db.session.commit()
     session["user_id"] = user.id
 
-    return "<h2>Login Google OK ✅</h2><p>Pode voltar para a aplicação.</p>"
+    return f"""
+    <h2>Login Google OK ✅</h2>
+    <p>Pode voltar para a aplicação.</p>
+    <p><b>Código:</b> {user.google_token}</p>
+    """
 
-# ================= PERFIL / DADOS DO UTILIZADOR =================
+# ================= PERFIL / ME =================
 @app.route("/me")
 def me():
     user_id = session.get("user_id")
@@ -159,6 +168,25 @@ def me():
             "google_picture": user.google_picture,
             "provider": user.provider
         }
+    )
+
+# ================= GOOGLE LOGIN TKINTER =================
+@app.route("/google-login", methods=["POST"])
+def google_login_tk():
+    data = request.json
+    token = data.get("token")
+
+    if not token:
+        return jsonify(status="error")
+
+    user = User.query.filter_by(google_token=token).first()
+    if not user:
+        return jsonify(status="error")
+
+    return jsonify(
+        status="ok",
+        nome=user.username,
+        email=user.email
     )
 
 # ================= LOGOUT =================
