@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, url_for, session, render_template
+from flask import Flask, request, jsonify, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from authlib.integrations.flask_client import OAuth
@@ -55,7 +55,6 @@ class User(db.Model):
 
     # token para Tkinter
     google_token = db.Column(db.String(64), unique=True)
-    google_token_expire = db.Column(db.DateTime)
 
     reset_code = db.Column(db.String(10))
     reset_expire = db.Column(db.DateTime)
@@ -79,10 +78,8 @@ def home():
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json
-
     if User.query.filter(
-        (User.username == data["username"]) |
-        (User.email == data["email"])
+        (User.username == data["username"]) | (User.email == data["email"])
     ).first():
         return jsonify(status="error", msg="Conta já existe")
 
@@ -94,7 +91,6 @@ def register():
     )
     db.session.add(user)
     db.session.commit()
-
     return jsonify(status="ok")
 
 # ================= LOGIN =================
@@ -142,17 +138,17 @@ def google_callback():
         user.google_picture = google_picture
         user.provider = "google"
 
-    # 🔑 token temporário (5 minutos)
+    # 🔑 token para o Tkinter
     user.google_token = uuid.uuid4().hex
-    user.google_token_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
 
     db.session.commit()
     session["user_id"] = user.id
 
-    return render_template(
-        "google_callback.html",
-        codigo=user.google_token
-    )
+    return f"""
+    <h2>Login Google OK ✅</h2>
+    <p>Pode voltar para a aplicação.</p>
+    <p><b>Código:</b> {user.google_token}</p>
+    """
 
 # ================= PERFIL / ME =================
 @app.route("/me")
@@ -181,19 +177,11 @@ def google_login_tk():
     token = data.get("token")
 
     if not token:
-        return jsonify(status="error", msg="Token em falta")
+        return jsonify(status="error")
 
     user = User.query.filter_by(google_token=token).first()
     if not user:
-        return jsonify(status="error", msg="Token inválido")
-
-    if not user.google_token_expire or datetime.datetime.utcnow() > user.google_token_expire:
-        return jsonify(status="error", msg="Token expirado")
-
-    # ❌ invalida o token após uso
-    user.google_token = None
-    user.google_token_expire = None
-    db.session.commit()
+        return jsonify(status="error")
 
     return jsonify(
         status="ok",
