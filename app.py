@@ -72,7 +72,156 @@ def gen_code():
 # ================= HOME =================
 @app.route("/")
 def home():
-    return "<h2>Servidor Online ✅</h2><p>Login Google e API ativos.</p>"
+    return """
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Recuperar Conta</title>
+<style>
+body{
+  margin:0;
+  height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background:linear-gradient(135deg,#020617,#1e293b);
+  font-family:Arial,Helvetica,sans-serif;
+  color:white;
+}
+.card{
+  background:#020617;
+  padding:40px;
+  width:440px;
+  border-radius:18px;
+  box-shadow:0 20px 40px rgba(0,0,0,.7);
+}
+h2{color:#22c55e;text-align:center}
+p{text-align:center}
+table{width:100%;margin-top:25px}
+td{padding:10px}
+button{
+  width:100%;
+  padding:14px;
+  border:none;
+  border-radius:10px;
+  font-size:15px;
+  cursor:pointer;
+}
+.pass{background:#2563eb;color:white}
+.user{background:#16a34a;color:white}
+.box{display:none;margin-top:20px}
+input{
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border-radius:8px;
+  border:1px solid #334155;
+}
+.msg{margin-top:10px;color:#38bdf8}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Servidor Online ✅</h2>
+  <p>Login Google e API ativos.</p>
+
+  <table>
+    <tr><td><button class="pass" onclick="showPass()">🔐 Recuperar Palavra-Passe</button></td></tr>
+    <tr><td><button class="user" onclick="showUser()">👤 Recuperar Utilizador</button></td></tr>
+  </table>
+
+  <div id="passBox" class="box">
+    <input id="passEmail" placeholder="Email da conta">
+    <button class="pass" onclick="sendCode()">Enviar código</button>
+    <div id="codeBox" style="display:none">
+      <input id="code" placeholder="Código recebido">
+      <input id="newpass" type="password" placeholder="Nova password">
+      <button class="pass" onclick="resetPass()">Alterar password</button>
+    </div>
+    <div class="msg" id="passMsg"></div>
+  </div>
+
+  <div id="userBox" class="box">
+    <input id="userEmail" placeholder="Email registado">
+    <button class="user" onclick="recoverUser()">Recuperar utilizador</button>
+    <div class="msg" id="userMsg"></div>
+  </div>
+</div>
+
+<script>
+function showPass(){passBox.style.display="block";userBox.style.display="none"}
+function showUser(){userBox.style.display="block";passBox.style.display="none"}
+
+function sendCode(){
+fetch("/api/send-reset",{method:"POST",headers:{'Content-Type':'application/json'},
+body:JSON.stringify({email:passEmail.value})})
+.then(r=>r.json()).then(d=>{
+passMsg.innerText=d.msg;
+if(d.status=="ok") codeBox.style.display="block";
+})}
+
+function resetPass(){
+fetch("/api/reset-pass",{method:"POST",headers:{'Content-Type':'application/json'},
+body:JSON.stringify({email:passEmail.value,code:code.value,password:newpass.value})})
+.then(r=>r.json()).then(d=>passMsg.innerText=d.msg)
+}
+
+function recoverUser(){
+fetch("/api/recover-user",{method:"POST",headers:{'Content-Type':'application/json'},
+body:JSON.stringify({email:userEmail.value})})
+.then(r=>r.json()).then(d=>userMsg.innerText=d.msg)
+}
+</script>
+
+</body>
+</html>
+"""
+
+# ================= RECUPERAR PASSWORD =================
+@app.route("/api/send-reset", methods=["POST"])
+def send_reset():
+    email = request.json.get("email")
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error", msg="Email não encontrado")
+
+    user.reset_code = gen_code()
+    user.reset_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
+    db.session.commit()
+
+    send_email(email, "Código de recuperação", f"Código: {user.reset_code}")
+    return jsonify(status="ok", msg="Código enviado para o email")
+
+@app.route("/api/reset-pass", methods=["POST"])
+def reset_pass():
+    data = request.json
+    user = User.query.filter_by(email=data["email"]).first()
+
+    if not user or user.reset_code != data["code"]:
+        return jsonify(status="error", msg="Código inválido")
+
+    if datetime.datetime.utcnow() > user.reset_expire:
+        return jsonify(status="error", msg="Código expirado")
+
+    user.password = generate_password_hash(data["password"])
+    user.reset_code = None
+    user.reset_expire = None
+    db.session.commit()
+
+    return jsonify(status="ok", msg="Password alterada com sucesso")
+
+# ================= RECUPERAR UTILIZADOR =================
+@app.route("/api/recover-user", methods=["POST"])
+def recover_user():
+    email = request.json.get("email")
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error", msg="Email não encontrado")
+
+    send_email(email, "Utilizador da conta", f"O seu utilizador é: {user.username}")
+    return jsonify(status="ok", msg="Email enviado com sucesso")
 
 # ================= REGISTER =================
 @app.route("/register", methods=["POST"])
