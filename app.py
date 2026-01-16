@@ -17,25 +17,13 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
- 
-# 👉 POSTGRES DO RENDER (fallback sqlite local)
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL",
-    "sqlite:///" + os.path.join(BASE_DIR, "users.db")
-).replace("postgres://", "postgresql://")
 
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-# 🔐 sessões seguras (Render / HTTPS)
-app.config["SESSION_COOKIE_SECURE"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 # ================= EMAIL =================
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.environ.get("EMAIL_USER")
 app.config["MAIL_PASSWORD"] = os.environ.get("EMAIL_PASS")
-app.config["MAIL_DEFAULT_SENDER"] = app.config["MAIL_USERNAME"]  # 🔧 ALTERADO
 
 # ================= INIT =================
 db = SQLAlchemy(app)
@@ -73,10 +61,10 @@ class User(db.Model):
 
 # ================= UTILS =================
 def send_email(to, subject, body):
-    print("📧 A enviar email para:", to)  # debug útil
-    msg = Message(subject=subject, recipients=[to], body=body)
+    if not app.config["MAIL_USERNAME"]:
+        return
+    msg = Message(subject, recipients=[to], body=body)
     mail.send(msg)
-    print("✅ Email enviado")
 
 def gen_code():
     return "".join(random.choices(string.digits, k=6))
@@ -164,77 +152,164 @@ function showUser(){
   document.getElementById("userBox").style.display = "block";
 }
 
-/* ---------- PASSWORD ---------- */
+# ================= REGISTER =================
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    if User.query.filter(
+        (User.username == data["username"]) | (User.email == data["email"])
+    ).first():
+        return jsonify(status="error", msg="Conta já existe")
 
-function sendCode(){
-  const email = document.getElementById("passEmail").value;
-  if(!email){
-    document.getElementById("passMsg").innerText = "Introduz o email";
-    return;
-  }
+    user = User(
+        username=data["username"],
+        email=data["email"],
+        password=generate_password_hash(data["password"]),
+        provider="local"
+    )
+    db.session.add(user)
+    db.session.commit()
+    return jsonify(status="ok")
 
-  fetch("/api/send-reset", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ email: email })
-  })
-  .then(r => r.json())
-  .then(d => {
-    document.getElementById("passMsg").innerText = d.msg;
-    if(d.status === "ok"){
-      document.getElementById("codeBox").style.display = "block";
-    }
-  })
-  .catch(() => {
-    document.getElementById("passMsg").innerText = "Erro no servidor";
-  });
-}
+# ================= LOGIN =================
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+    user = User.query.filter_by(username=data["username"]).first()
 
-function resetPass(){
-  fetch("/api/reset-pass", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({
-      email: document.getElementById("passEmail").value,
-      code: document.getElementById("code").value,
-      password: document.getElementById("newpass").value
-    })
-  })
-  .then(r => r.json())
-  .then(d => {
-    document.getElementById("passMsg").innerText = d.msg;
-  });
-}
+    if not user or not check_password_hash(user.password, data["password"]):
+        return jsonify(status="error", msg="Dados inválidos")
 
-/* ---------- USER ---------- */
+    session["user_id"] = user.id
+    return jsonify(status="ok")
 
-function recoverUser(){
-  const email = document.getElementById("userEmail").value;
+# ================= GOOGLE LOGIN =================
+@app.route("/login/google")
+def login_google():
+    redirect_uri = url_for("google_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
 
-  if(!email){
-    document.getElementById("userMsg").innerText = "Introduz o email";
-    return;
-  }
+@app.route("/auth/google/callback")
+def google_callback():
+    token = google.authorize_access_token()
+    info = google.get("userinfo").json()
 
-  fetch("/api/recover-user", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ email: email })
-  })
-  .then(r => r.json())
-  .then(d => {
-    document.getElementById("userMsg").innerText = d.msg;
-  })
-  .catch(() => {
-    document.getElementById("userMsg").innerText = "Erro ao contactar servidor";
-  });
-}
+    email = info["email"]
+    google_name = info.get("name")
+    google_picture = info.get("picture")
+    username = google_name or email.split("@")[0]
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        user = User(
+            username=username,
+            email=email,
+            password="google",
+            google_name=google_name,
+            google_picture=google_picture,
+            provider="google"
+        )
+        db.session.add(user)
+    else:
+        user.google_name = google_name
+        user.google_picture = google_picture
+        user.provider = "google"
+
+    # 🔑 token para o Tkinter
+    user.google_token = uuid.uuid4().hex
+
+    db.session.commit()
+    session["user_id"] = user.id
+
+    return f"""
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Login Google OK</title>
+<style>
+body {{
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #020617, #1e293b);
+  font-family: Arial, Helvetica, sans-serif;
+  color: white;
+}}
+.box {{
+  background: #020617;
+  padding: 50px;
+  border-radius: 16px;
+  max-width: 750px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.7);
+}}
+h1 {{ font-size: 36px; color: #22c55e; }}
+p {{ font-size: 20px; }}
+table {{
+  width: 100%;
+  border-collapse: collapse;
+  margin: 30px 0;
+  font-size: 18px;
+}}
+th, td {{
+  border: 1px solid #334155;
+  padding: 14px;
+}}
+th {{ color: #38bdf8; }}
+.code {{
+  margin-top: 20px;
+  font-size: 22px;
+  font-weight: bold;
+  padding: 18px;
+  border-radius: 10px;
+  border: 1px dashed #38bdf8;
+  background: #020617;
+  word-break: break-all;
+}}
+.timer {{
+  margin-top: 15px;
+  font-size: 18px;
+  color: #f87171;
+}}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Login Google OK ✅</h1>
+  <p>Pode voltar para a aplicação</p>
+
+  <table>
+    <tr><th>O que fazer</th><th>O que acontece</th></tr>
+    <tr><td>Copiar o código</td><td>Login no aplicativo</td></tr>
+    <tr><td>Usar no app</td><td>Login automático</td></tr>
+    <tr><td>Esperar 5 minutos</td><td>Código expira</td></tr>
+    <tr><td>Tentar reutilizar</td><td>Não funciona</td></tr>
+  </table>
+
+  <div class="code">Código: {user.google_token}</div>
+  <div id="timer" class="timer"></div>
+</div>
+
+<script>
+let tempo = 300;
+function atualizar() {{
+  let m = Math.floor(tempo / 60);
+  let s = tempo % 60;
+  document.getElementById("timer").innerText =
+    "⏱️ Código válido por " + m + ":" + s.toString().padStart(2,"0") + " minutos";
+  tempo--;
+  if (tempo >= 0) setTimeout(atualizar, 1000);
+}}
+atualizar();
 </script>
-
 </body>
 </html>
 """
-
 # ================= API =================
 @app.route("/api/send-reset", methods=["POST"])
 def send_reset():
@@ -308,42 +383,7 @@ def me():
             "provider": user.provider
         }
     )
-# ================= GOOGLE =================
-def continuar_google():
-    codigo = simpledialog.askstring(
-        "Login Google",
-        "Cole o código fornecido pelo Google:",
-        parent=root
-    )
-    if not codigo:
-        return
 
-    try:
-        r = requests.post(f"{SERVER_URL}/google-login",
-                          json={"token": codigo}, timeout=5)
-        data = r.json()
-
-        if data.get("status") == "ok":
-            perfil_app["google_nome"] = data.get("nome", "")
-            perfil_app["google_email"] = data.get("email", "")
-            perfil_app["nome_app"] = data.get("nome", "Utilizador")
-
-            foto_url = data.get("foto")
-            if foto_url:
-                try:
-                    img_bytes = requests.get(foto_url, timeout=5).content
-                    caminho = os.path.join(PASTA_FOTOS, "foto_google.png")
-                    with open(caminho, "wb") as f:
-                        f.write(img_bytes)
-                    perfil_app["foto_google"] = caminho
-                except:
-                    perfil_app["foto_google"] = None
-
-            tela_dashboard()
-        else:
-            messagebox.showerror("Erro", "Código inválido ou expirado")
-    except:
-        messagebox.showerror("Erro", "Servidor indisponível")
 # ================= GOOGLE LOGIN TKINTER =================
 @app.route("/google-login", methods=["POST"])
 def google_login_tk():
@@ -358,6 +398,7 @@ def google_login_tk():
         return jsonify(status="error")
 
     return jsonify(status="ok", nome=user.username, email=user.email)
+
 
 # ================= LOGOUT =================
 @app.route("/logout")
