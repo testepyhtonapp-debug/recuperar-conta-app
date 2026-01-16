@@ -72,35 +72,31 @@ def gen_code():
 # ================= HOME =================
 @app.route("/")
 def home():
-    return """
-<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
 <title>Recuperar Conta</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
-*{box-sizing:border-box}
 body{
   margin:0;
-  min-height:100vh;
+  height:100vh;
   display:flex;
   justify-content:center;
   align-items:center;
   background:linear-gradient(135deg,#020617,#1e293b);
-  font-family:Arial, Helvetica, sans-serif;
+  font-family:Arial;
   color:white;
 }
 .card{
   background:#020617;
   padding:40px;
-  width:100%;
-  max-width:420px;
+  width:420px;
   border-radius:18px;
   box-shadow:0 20px 40px rgba(0,0,0,.7);
   text-align:center;
 }
-h2{margin-top:0}
 button{
   width:100%;
   padding:14px;
@@ -118,41 +114,36 @@ input{
   margin-top:12px;
   border-radius:8px;
   border:1px solid #334155;
-  background:#020617;
-  color:white;
 }
-input::placeholder{color:#94a3b8}
 .box{display:none;margin-top:20px}
-.msg{margin-top:12px;color:#38bdf8;min-height:20px}
-.small{font-size:13px;color:#94a3b8;margin-top:10px}
+.msg{margin-top:12px;color:#38bdf8}
 </style>
 </head>
+
 <body>
 
 <div class="card">
   <h2 style="color:#22c55e">Servidor Online ✅</h2>
-  <p class="small">Recuperação de conta segura</p>
+  <p>Recuperação de conta e Login Google ativos.</p>
 
   <div id="buttonsBox">
     <button class="pass" onclick="showPass()">🔐 Recuperar Palavra-Passe</button>
     <button class="user" onclick="showUser()">👤 Recuperar Utilizador</button>
   </div>
 
-  <!-- PASSWORD -->
   <div id="passBox" class="box">
     <input id="passEmail" placeholder="Email da conta">
     <button class="pass" onclick="sendCode()">Enviar código</button>
 
     <div id="codeBox" style="display:none">
       <input id="code" placeholder="Código recebido">
-      <input id="newpass" type="password" placeholder="Nova palavra-passe">
-      <button class="pass" onclick="resetPass()">Alterar palavra-passe</button>
+      <input id="newpass" type="password" placeholder="Nova password">
+      <button class="pass" onclick="resetPass()">Alterar password</button>
     </div>
 
     <div class="msg" id="passMsg"></div>
   </div>
 
-  <!-- USER -->
   <div id="userBox" class="box">
     <input id="userEmail" placeholder="Email registado">
     <button class="user" onclick="recoverUser()">Recuperar utilizador</button>
@@ -173,27 +164,14 @@ function showUser(){
   document.getElementById("userBox").style.display="block";
 }
 
-/* PASSWORD */
 function sendCode(){
-  const email=document.getElementById("passEmail").value;
-  if(!email){
-    document.getElementById("passMsg").innerText="Introduz o email";
-    return;
-  }
   fetch("/api/send-reset",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({email})
-  })
-  .then(r=>r.json())
-  .then(d=>{
-    document.getElementById("passMsg").innerText=d.msg;
-    if(d.status==="ok"){
-      document.getElementById("codeBox").style.display="block";
-    }
-  })
-  .catch(()=>{
-    document.getElementById("passMsg").innerText="Erro no servidor";
+    body:JSON.stringify({email:passEmail.value})
+  }).then(r=>r.json()).then(d=>{
+    passMsg.innerText=d.msg;
+    if(d.status==="ok") codeBox.style.display="block";
   });
 }
 
@@ -202,42 +180,29 @@ function resetPass(){
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
-      email:document.getElementById("passEmail").value,
-      code:document.getElementById("code").value,
-      password:document.getElementById("newpass").value
+      email:passEmail.value,
+      code:code.value,
+      password:newpass.value
     })
-  })
-  .then(r=>r.json())
-  .then(d=>{
-    document.getElementById("passMsg").innerText=d.msg;
+  }).then(r=>r.json()).then(d=>{
+    passMsg.innerText=d.msg;
   });
 }
 
-/* USER */
 function recoverUser(){
-  const email=document.getElementById("userEmail").value;
-  if(!email){
-    document.getElementById("userMsg").innerText="Introduz o email";
-    return;
-  }
   fetch("/api/recover-user",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({email})
-  })
-  .then(r=>r.json())
-  .then(d=>{
-    document.getElementById("userMsg").innerText=d.msg;
-  })
-  .catch(()=>{
-    document.getElementById("userMsg").innerText="Erro no servidor";
+    body:JSON.stringify({email:userEmail.value})
+  }).then(r=>r.json()).then(d=>{
+    userMsg.innerText=d.msg;
   });
 }
 </script>
 
 </body>
-</html>
-"""
+</html>"""
+
 # ================= REGISTER =================
 @app.route("/register", methods=["POST"])
 def register():
