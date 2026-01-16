@@ -35,6 +35,7 @@ app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.environ.get("EMAIL_USER")
 app.config["MAIL_PASSWORD"] = os.environ.get("EMAIL_PASS")
+app.config["MAIL_DEFAULT_SENDER"] = app.config["MAIL_USERNAME"]  # 🔧 ALTERADO
 
 # ================= INIT =================
 db = SQLAlchemy(app)
@@ -72,10 +73,10 @@ class User(db.Model):
 
 # ================= UTILS =================
 def send_email(to, subject, body):
-    if not app.config["MAIL_USERNAME"]:
-        return
-    msg = Message(subject, recipients=[to], body=body)
+    print("📧 A enviar email para:", to)  # debug útil
+    msg = Message(subject=subject, recipients=[to], body=body)
     mail.send(msg)
+    print("✅ Email enviado")
 
 def gen_code():
     return "".join(random.choices(string.digits, k=6))
@@ -183,12 +184,13 @@ function recoverUser(){
 </body>
 </html>
 """
-    
-# ================= API =================
+    # ================= API =================
+
 @app.route("/api/send-reset", methods=["POST"])
 def send_reset():
     email = request.json.get("email")
     user = User.query.filter_by(email=email).first()
+
     if not user:
         return jsonify(status="error", msg="Email não encontrado")
 
@@ -198,7 +200,6 @@ def send_reset():
 
     send_email(email, "Código de recuperação", f"Código: {user.reset_code}")
     return jsonify(status="ok", msg="Código enviado para o email")
-
 
 @app.route("/api/reset-pass", methods=["POST"])
 def reset_pass():
@@ -218,79 +219,16 @@ def reset_pass():
 
     return jsonify(status="ok", msg="Password alterada com sucesso")
 
-
 @app.route("/api/recover-user", methods=["POST"])
 def recover_user():
     email = request.json.get("email")
     user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify(status="error", msg="Email não encontrado")
 
-    send_email(
-        email,
-        "Utilizador da conta",
-        f"O seu utilizador é: {user.username}"
-    )
-    return jsonify(status="ok", msg="Email enviado com o seu nome de utilizador")
-
-
-# ================= RECUPERAR PASSWORD =================
-    email = request.json.get("email")
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify(status="error", msg="Email não encontrado")
-
-    user.reset_code = gen_code()
-    user.reset_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
-    db.session.commit()
-
-    send_email(email, "Código de recuperação", f"Código: {user.reset_code}")
-    return jsonify(status="ok", msg="Código enviado para o email")
-
-    data = request.json
-    user = User.query.filter_by(email=data["email"]).first()
-
-    if not user or user.reset_code != data["code"]:
-        return jsonify(status="error", msg="Código inválido")
-
-    if datetime.datetime.utcnow() > user.reset_expire:
-        return jsonify(status="error", msg="Código expirado")
-
-    user.password = generate_password_hash(data["password"])
-    user.reset_code = None
-    user.reset_expire = None
-    db.session.commit()
-
-    return jsonify(status="ok", msg="Password alterada com sucesso")
-
-# ================= RECUPERAR UTILIZADOR =================
-    email = request.json.get("email")
-    user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify(status="error", msg="Email não encontrado")
 
     send_email(email, "Utilizador da conta", f"O seu utilizador é: {user.username}")
     return jsonify(status="ok", msg="Email enviado com sucesso")
-
-# ================= REGISTER =================
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
-    if User.query.filter(
-        (User.username == data["username"]) | (User.email == data["email"])
-    ).first():
-        return jsonify(status="error", msg="Conta já existe")
-
-    user = User(
-        username=data["username"],
-        email=data["email"],
-        password=generate_password_hash(data["password"]),
-        provider="local"
-    )
-    db.session.add(user)
-    db.session.commit()
-    return jsonify(status="ok")
-
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
 def login():
