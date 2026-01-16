@@ -235,8 +235,6 @@ def recover_user():
 
 
 # ================= RECUPERAR PASSWORD =================
-@app.route("/api/send-reset", methods=["POST"])
-def send_reset():
     email = request.json.get("email")
     user = User.query.filter_by(email=email).first()
     if not user:
