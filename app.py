@@ -234,15 +234,16 @@ function recoverUser(){
 </body>
 </html>
 """
-    # ================= API =================
 
+# ================= API =================
 @app.route("/api/send-reset", methods=["POST"])
 def send_reset():
-    email = request.json.get("email")
-    user = User.query.filter_by(email=email).first()
+    data = request.get_json()
+    email = data.get("email")
 
+    user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify(status="error", msg="Email não encontrado")
+        return jsonify(status="error", msg="Email não encontrado"), 404
 
     user.reset_code = gen_code()
     user.reset_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
@@ -251,173 +252,42 @@ def send_reset():
     send_email(email, "Código de recuperação", f"Código: {user.reset_code}")
     return jsonify(status="ok", msg="Código enviado para o email")
 
+
 @app.route("/api/reset-pass", methods=["POST"])
 def reset_pass():
-    data = request.json
-    user = User.query.filter_by(email=data["email"]).first()
+    data = request.get_json()
 
-    if not user or user.reset_code != data["code"]:
-        return jsonify(status="error", msg="Código inválido")
+    user = User.query.filter_by(email=data.get("email")).first()
+    if not user or user.reset_code != data.get("code"):
+        return jsonify(status="error", msg="Código inválido"), 400
 
     if datetime.datetime.utcnow() > user.reset_expire:
-        return jsonify(status="error", msg="Código expirado")
+        return jsonify(status="error", msg="Código expirado"), 400
 
-    user.password = generate_password_hash(data["password"])
+    user.password = generate_password_hash(data.get("password"))
     user.reset_code = None
     user.reset_expire = None
     db.session.commit()
 
     return jsonify(status="ok", msg="Password alterada com sucesso")
 
+
 @app.route("/api/recover-user", methods=["POST"])
 def recover_user():
-    email = request.json.get("email")
-    user = User.query.filter_by(email=email).first()
-
-    if not user:
-        return jsonify(status="error", msg="Email não encontrado")
-
-    send_email(email, "Utilizador da conta", f"O seu utilizador é: {user.username}")
-    return jsonify(status="ok", msg="Email enviado com sucesso")
-# ================= LOGIN =================
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.json
-    user = User.query.filter_by(username=data["username"]).first()
-
-    if not user or not check_password_hash(user.password, data["password"]):
-        return jsonify(status="error", msg="Dados inválidos")
-
-    session["user_id"] = user.id
-    return jsonify(status="ok")
-
-# ================= GOOGLE LOGIN =================
-@app.route("/login/google")
-def login_google():
-    redirect_uri = url_for("google_callback", _external=True)
-    return google.authorize_redirect(redirect_uri)
-
-@app.route("/auth/google/callback")
-def google_callback():
-    token = google.authorize_access_token()
-    info = google.get("userinfo").json()
-
-    email = info["email"]
-    google_name = info.get("name")
-    google_picture = info.get("picture")
-    username = google_name or email.split("@")[0]
+    data = request.get_json()
+    email = data.get("email")
 
     user = User.query.filter_by(email=email).first()
-
     if not user:
-        user = User(
-            username=username,
-            email=email,
-            password="google",
-            google_name=google_name,
-            google_picture=google_picture,
-            provider="google"
-        )
-        db.session.add(user)
-    else:
-        user.google_name = google_name
-        user.google_picture = google_picture
-        user.provider = "google"
+        return jsonify(status="error", msg="Email não encontrado"), 404
 
-    # 🔑 token para o Tkinter
-    user.google_token = uuid.uuid4().hex
+    send_email(
+        email,
+        "Utilizador da conta",
+        f"O seu utilizador é: {user.username}"
+    )
 
-    db.session.commit()
-    session["user_id"] = user.id
-
-    return f"""
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-<meta charset="UTF-8">
-<title>Login Google OK</title>
-<style>
-body {{
-  margin: 0;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #020617, #1e293b);
-  font-family: Arial, Helvetica, sans-serif;
-  color: white;
-}}
-.box {{
-  background: #020617;
-  padding: 50px;
-  border-radius: 16px;
-  max-width: 750px;
-  width: 90%;
-  text-align: center;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.7);
-}}
-h1 {{ font-size: 36px; color: #22c55e; }}
-p {{ font-size: 20px; }}
-table {{
-  width: 100%;
-  border-collapse: collapse;
-  margin: 30px 0;
-  font-size: 18px;
-}}
-th, td {{
-  border: 1px solid #334155;
-  padding: 14px;
-}}
-th {{ color: #38bdf8; }}
-.code {{
-  margin-top: 20px;
-  font-size: 22px;
-  font-weight: bold;
-  padding: 18px;
-  border-radius: 10px;
-  border: 1px dashed #38bdf8;
-  background: #020617;
-  word-break: break-all;
-}}
-.timer {{
-  margin-top: 15px;
-  font-size: 18px;
-  color: #f87171;
-}}
-</style>
-</head>
-<body>
-<div class="box">
-  <h1>Login Google OK ✅</h1>
-  <p>Pode voltar para a aplicação</p>
-
-  <table>
-    <tr><th>O que fazer</th><th>O que acontece</th></tr>
-    <tr><td>Copiar o código</td><td>Login no aplicativo</td></tr>
-    <tr><td>Usar no app</td><td>Login automático</td></tr>
-    <tr><td>Esperar 5 minutos</td><td>Código expira</td></tr>
-    <tr><td>Tentar reutilizar</td><td>Não funciona</td></tr>
-  </table>
-
-  <div class="code">Código: {user.google_token}</div>
-  <div id="timer" class="timer"></div>
-</div>
-
-<script>
-let tempo = 300;
-function atualizar() {{
-  let m = Math.floor(tempo / 60);
-  let s = tempo % 60;
-  document.getElementById("timer").innerText =
-    "⏱️ Código válido por " + m + ":" + s.toString().padStart(2,"0") + " minutos";
-  tempo--;
-  if (tempo >= 0) setTimeout(atualizar, 1000);
-}}
-atualizar();
-</script>
-</body>
-</html>
-"""
+    return jsonify(status="ok", msg="Email enviado com o seu nome de utilizador")
 
 # ================= PERFIL / ME =================
 @app.route("/me")
