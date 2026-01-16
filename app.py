@@ -308,7 +308,42 @@ def me():
             "provider": user.provider
         }
     )
+# ================= GOOGLE =================
+def continuar_google():
+    codigo = simpledialog.askstring(
+        "Login Google",
+        "Cole o código fornecido pelo Google:",
+        parent=root
+    )
+    if not codigo:
+        return
 
+    try:
+        r = requests.post(f"{SERVER_URL}/google-login",
+                          json={"token": codigo}, timeout=5)
+        data = r.json()
+
+        if data.get("status") == "ok":
+            perfil_app["google_nome"] = data.get("nome", "")
+            perfil_app["google_email"] = data.get("email", "")
+            perfil_app["nome_app"] = data.get("nome", "Utilizador")
+
+            foto_url = data.get("foto")
+            if foto_url:
+                try:
+                    img_bytes = requests.get(foto_url, timeout=5).content
+                    caminho = os.path.join(PASTA_FOTOS, "foto_google.png")
+                    with open(caminho, "wb") as f:
+                        f.write(img_bytes)
+                    perfil_app["foto_google"] = caminho
+                except:
+                    perfil_app["foto_google"] = None
+
+            tela_dashboard()
+        else:
+            messagebox.showerror("Erro", "Código inválido ou expirado")
+    except:
+        messagebox.showerror("Erro", "Servidor indisponível")
 # ================= GOOGLE LOGIN TKINTER =================
 @app.route("/google-login", methods=["POST"])
 def google_login_tk():
