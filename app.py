@@ -199,6 +199,7 @@ def send_reset():
     send_email(email, "Código de recuperação", f"Código: {user.reset_code}")
     return jsonify(status="ok", msg="Código enviado para o email")
 
+
 @app.route("/api/reset-pass", methods=["POST"])
 def reset_pass():
     data = request.json
@@ -217,6 +218,7 @@ def reset_pass():
 
     return jsonify(status="ok", msg="Password alterada com sucesso")
 
+
 @app.route("/api/recover-user", methods=["POST"])
 def recover_user():
     email = request.json.get("email")
@@ -224,8 +226,13 @@ def recover_user():
     if not user:
         return jsonify(status="error", msg="Email não encontrado")
 
-    send_email(email, "Utilizador da conta", f"O seu utilizador é: {user.username}")
+    send_email(
+        email,
+        "Utilizador da conta",
+        f"O seu utilizador é: {user.username}"
+    )
     return jsonify(status="ok", msg="Email enviado com o seu nome de utilizador")
+
 
 # ================= RECUPERAR PASSWORD =================
 @app.route("/api/send-reset", methods=["POST"])
@@ -242,8 +249,6 @@ def send_reset():
     send_email(email, "Código de recuperação", f"Código: {user.reset_code}")
     return jsonify(status="ok", msg="Código enviado para o email")
 
-@app.route("/api/reset-pass", methods=["POST"])
-def reset_pass():
     data = request.json
     user = User.query.filter_by(email=data["email"]).first()
 
@@ -261,8 +266,6 @@ def reset_pass():
     return jsonify(status="ok", msg="Password alterada com sucesso")
 
 # ================= RECUPERAR UTILIZADOR =================
-@app.route("/api/recover-user", methods=["POST"])
-def recover_user():
     email = request.json.get("email")
     user = User.query.filter_by(email=email).first()
     if not user:
