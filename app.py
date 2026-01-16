@@ -125,6 +125,7 @@ input{
     <button class="user" onclick="showUser()">👤 Recuperar Utilizador</button>
   </div>
 
+  <!-- PASSWORD -->
   <div id="passBox" class="box">
     <input id="passEmail" placeholder="Email da conta">
     <button class="pass" onclick="sendCode()">Enviar código</button>
@@ -138,6 +139,7 @@ input{
     <div class="msg" id="passMsg"></div>
   </div>
 
+  <!-- USER -->
   <div id="userBox" class="box">
     <input id="userEmail" placeholder="Email registado">
     <button class="user" onclick="recoverUser()">Recuperar utilizador</button>
@@ -146,41 +148,89 @@ input{
 </div>
 
 <script>
+console.log("JS carregado");
+
 function hideButtons(){
-  document.getElementById("buttonsBox").style.display="none";
+  document.getElementById("buttonsBox").style.display = "none";
 }
 
 function showPass(){
   hideButtons();
-  passBox.style.display="block";
+  document.getElementById("passBox").style.display = "block";
 }
 
 function showUser(){
   hideButtons();
-  userBox.style.display="block";
+  document.getElementById("userBox").style.display = "block";
 }
 
+/* ---------- PASSWORD ---------- */
+
 function sendCode(){
-  fetch("/api/send-reset",{method:"POST",headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({email:passEmail.value})})
-  .then(r=>r.json()).then(d=>{
-    passMsg.innerText=d.msg;
-    if(d.status=="ok") codeBox.style.display="block";
+  const email = document.getElementById("passEmail").value;
+  if(!email){
+    document.getElementById("passMsg").innerText = "Introduz o email";
+    return;
+  }
+
+  fetch("/api/send-reset", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ email: email })
+  })
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("passMsg").innerText = d.msg;
+    if(d.status === "ok"){
+      document.getElementById("codeBox").style.display = "block";
+    }
+  })
+  .catch(() => {
+    document.getElementById("passMsg").innerText = "Erro no servidor";
   });
 }
 
 function resetPass(){
-  fetch("/api/reset-pass",{method:"POST",headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({email:passEmail.value,code:code.value,password:newpass.value})})
-  .then(r=>r.json()).then(d=>passMsg.innerText=d.msg);
+  fetch("/api/reset-pass", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      email: document.getElementById("passEmail").value,
+      code: document.getElementById("code").value,
+      password: document.getElementById("newpass").value
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("passMsg").innerText = d.msg;
+  });
 }
 
+/* ---------- USER ---------- */
+
 function recoverUser(){
-  fetch("/api/recover-user",{method:"POST",headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({email:userEmail.value})})
-  .then(r=>r.json()).then(d=>userMsg.innerText=d.msg);
+  const email = document.getElementById("userEmail").value;
+
+  if(!email){
+    document.getElementById("userMsg").innerText = "Introduz o email";
+    return;
+  }
+
+  fetch("/api/recover-user", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ email: email })
+  })
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("userMsg").innerText = d.msg;
+  })
+  .catch(() => {
+    document.getElementById("userMsg").innerText = "Erro ao contactar servidor";
+  });
 }
 </script>
+
 </body>
 </html>
 """
