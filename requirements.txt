@@ -6,4 +6,5 @@ Authlib
 requests
 python-dotenv
 gunicorn
-
+Werkzeug
+psycopg2-binary
