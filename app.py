@@ -18,6 +18,12 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+# 👉 USA POSTGRES DO RENDER
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", "sqlite:///users.db"
+).replace("postgres://", "postgresql://")
+
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 # ================= EMAIL =================
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
