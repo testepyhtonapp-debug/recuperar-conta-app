@@ -18,12 +18,17 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# 👉 USA POSTGRES DO RENDER
+# 👉 POSTGRES DO RENDER (fallback sqlite local)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "sqlite:///users.db"
+    "DATABASE_URL",
+    "sqlite:///" + os.path.join(BASE_DIR, "users.db")
 ).replace("postgres://", "postgresql://")
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# 🔐 sessões seguras (Render / HTTPS)
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 # ================= EMAIL =================
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
