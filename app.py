@@ -6,14 +6,20 @@ import os, uuid
 
 # ================= APP =================
 app = Flask(__name__)
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-
-# 🔒 ESSENCIAL PARA RENDER (HTTPS atrás de proxy)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # ================= CONFIG =================
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "users.db")
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL não definida")
+
+# fix postgres antigo
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # ================= INIT =================
@@ -52,42 +58,40 @@ def home():
 # ================= LOGIN GOOGLE =================
 @app.route("/login/google")
 def login_google():
-    # 🔑 Redirect URI AUTOMÁTICO (HTTPS do Render)
     redirect_uri = url_for("google_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 @app.route("/auth/google/callback")
 def google_callback():
-    token = google.authorize_access_token()
-    info = google.get("userinfo").json()
+    try:
+        token = google.authorize_access_token()
+        info = google.get("userinfo").json()
 
-    email = info["email"]
-    name = info.get("name")
-    picture = info.get("picture")
-    username = name or email.split("@")[0]
+        email = info["email"]
+        name = info.get("name")
+        picture = info.get("picture")
+        username = name or email.split("@")[0]
 
-    user = User.query.filter_by(email=email).first()
+        user = User.query.filter_by(email=email).first()
 
-    if not user:
-        user = User(
-            username=username,
-            email=email,
-            google_name=name,
-            google_picture=picture,
-            provider="google"
-        )
-        db.session.add(user)
-    else:
+        if not user:
+            user = User(
+                username=username,
+                email=email,
+                google_name=name,
+                google_picture=picture,
+                provider="google"
+            )
+            db.session.add(user)
+
         user.google_name = name
         user.google_picture = picture
+        user.google_token = uuid.uuid4().hex
 
-    # 🔑 Token para o app Tkinter
-    user.google_token = uuid.uuid4().hex
-    db.session.commit()
+        db.session.commit()
+        session["user_id"] = user.id
 
-    session["user_id"] = user.id
-
-    return f"""
+        return f"""
 <!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -181,13 +185,15 @@ atualizar();
 </body>
 </html>
 """
+    except Exception as e:
+        return f"<pre>ERRO INTERNO:\n{e}</pre>", 500
 
 # ================= TOKEN PARA TKINTER =================
 @app.route("/google-login", methods=["POST"])
 def google_login_token():
     token = request.json.get("token")
-
     user = User.query.filter_by(google_token=token).first()
+
     if not user:
         return jsonify(status="error")
 
