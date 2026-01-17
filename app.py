@@ -1,15 +1,11 @@
 from flask import Flask, request, jsonify, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
-from werkzeug.middleware.proxy_fix import ProxyFix
 import os, uuid
 
 # ================= APP =================
 app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-
-# Forçar HTTPS atrás do Render
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # ================= CONFIG =================
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
