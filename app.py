@@ -232,6 +232,54 @@ atualizar();
 </body>
 </html>
 """
+# ================= RECOVER USERNAME =================
+@app.route("/recover-username", methods=["POST"])
+def recover_username():
+    data = request.json
+    email = data.get("email")
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error", msg="Email não encontrado")
+
+    send_email(
+        email,
+        "Recuperação de utilizador",
+        f"O seu nome de utilizador do app é: {user.username}"
+    )
+
+    return jsonify(status="ok", msg="Email enviado com sucesso")
+
+# ================= RECOVER PASSWORD =================
+@app.route("/recover-password", methods=["POST"])
+def recover_password():
+    data = request.json
+    email = data.get("email")
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify(status="error", msg="Email não encontrado")
+
+    firebase_reset_url = (
+        "https://recuperacao-app.firebaseapp.com/__/auth/action"
+        "?mode=resetPassword"
+        f"&email={email}"
+    )
+
+    send_email(
+        email,
+        "Recuperação de password",
+        f"""
+Recebemos um pedido para alterar a sua palavra-passe.
+
+Clique no link abaixo para continuar:
+{firebase_reset_url}
+
+Se não foi você, ignore este email.
+"""
+    )
+
+    return jsonify(status="ok", msg="Email de recuperação enviado com sucesso")
 
 # ================= PERFIL / ME =================
 @app.route("/me")
