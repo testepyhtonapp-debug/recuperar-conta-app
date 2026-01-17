@@ -1,11 +1,15 @@
 from flask import Flask, request, jsonify, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
 from authlib.integrations.flask_client import OAuth
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os, uuid
 
 # ================= APP =================
 app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+# 🔒 ESSENCIAL PARA RENDER (HTTPS atrás de proxy)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # ================= CONFIG =================
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
@@ -48,6 +52,7 @@ def home():
 # ================= LOGIN GOOGLE =================
 @app.route("/login/google")
 def login_google():
+    # 🔑 Redirect URI AUTOMÁTICO (HTTPS do Render)
     redirect_uri = url_for("google_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
@@ -76,7 +81,7 @@ def google_callback():
         user.google_name = name
         user.google_picture = picture
 
-    # gerar token para o app
+    # 🔑 Token para o app Tkinter
     user.google_token = uuid.uuid4().hex
     db.session.commit()
 
@@ -181,8 +186,8 @@ atualizar();
 @app.route("/google-login", methods=["POST"])
 def google_login_token():
     token = request.json.get("token")
-    user = User.query.filter_by(google_token=token).first()
 
+    user = User.query.filter_by(google_token=token).first()
     if not user:
         return jsonify(status="error")
 
