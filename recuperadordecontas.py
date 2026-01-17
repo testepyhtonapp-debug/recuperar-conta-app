@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os, random, string, datetime
 
@@ -10,9 +10,9 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # ================= CONFIG =================
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "recover-secret")
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "recuperador-secret")
 
-# PostgreSQL do Render (MESMA DB do app principal)
+# 🔴 POSTGRESQL DO RENDER (OBRIGATÓRIO)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -23,13 +23,12 @@ app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.environ.get("EMAIL_USER")
 app.config["MAIL_PASSWORD"] = os.environ.get("EMAIL_PASS")
 
+# ================= INIT =================
 db = SQLAlchemy(app)
 mail = Mail(app)
 
-# ================= MODEL (IGUAL AO APP PRINCIPAL) =================
+# ================= MODEL =================
 class User(db.Model):
-    __tablename__ = "user"
-
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True)
     email = db.Column(db.String(120), unique=True)
@@ -39,93 +38,93 @@ class User(db.Model):
     reset_expire = db.Column(db.DateTime)
 
 # ================= UTILS =================
-def gerar_codigo():
+def gen_code():
     return "".join(random.choices(string.digits, k=6))
 
-def enviar_email(dest, assunto, texto):
+def send_email(to, subject, body):
     if not app.config["MAIL_USERNAME"]:
         return
-    msg = Message(assunto, recipients=[dest], body=texto)
+    msg = Message(subject, recipients=[to], body=body)
     mail.send(msg)
 
-# ================= HOME =================
+# ================= STATUS =================
 @app.route("/")
-def home():
-    return jsonify(
-        status="ok",
-        service="Recuperador de Contas Online"
-    )
+def status():
+    return jsonify(service="Recuperador de Contas Online", status="ok")
 
 # ================= RECUPERAR UTILIZADOR =================
-@app.route("/recover-username", methods=["POST"])
+@app.route("/recover/username", methods=["POST"])
 def recover_username():
-    email = request.json.get("email")
+    data = request.json
+    email = data.get("email")
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify(status="error", msg="Email não encontrado")
+        return jsonify(status="error", msg="Email não encontrado"), 404
 
-    enviar_email(
+    send_email(
         email,
         "Recuperação de Utilizador",
-        f"O seu nome de utilizador do aplicativo é: {user.username}"
+        f"O seu nome de utilizador é: {user.username}"
     )
 
-    return jsonify(status="ok", msg="Utilizador enviado para o email")
+    return jsonify(status="ok")
 
-# ================= RECUPERAR PASSWORD (ETAPA 1) =================
-@app.route("/recover-password", methods=["POST"])
-def recover_password():
-    email = request.json.get("email")
+# ================= PEDIR CÓDIGO PASSWORD =================
+@app.route("/recover/password/request", methods=["POST"])
+def recover_password_request():
+    data = request.json
+    email = data.get("email")
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify(status="error", msg="Email não encontrado")
+        return jsonify(status="error", msg="Email não encontrado"), 404
 
-    codigo = gerar_codigo()
-    user.reset_code = codigo
-    user.reset_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
-
+    code = gen_code()
+    user.reset_code = code
+    user.reset_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
     db.session.commit()
 
-    enviar_email(
+    send_email(
         email,
-        "Código de recuperação de password",
-        f"O seu código para alterar a palavra-passe é: {codigo}\n\n"
-        "Este código é válido por 10 minutos."
+        "Código de Recuperação de Password",
+        f"O seu código de recuperação é: {code}\nVálido por 5 minutos."
     )
 
-    return jsonify(status="ok", msg="Código enviado para o email")
+    return jsonify(status="ok")
 
-# ================= ALTERAR PASSWORD (ETAPA 2) =================
-@app.route("/reset-password", methods=["POST"])
-def reset_password():
-    codigo = request.json.get("code")
-    nova_password = request.json.get("password")
+# ================= CONFIRMAR NOVA PASSWORD =================
+@app.route("/recover/password/confirm", methods=["POST"])
+def recover_password_confirm():
+    data = request.json
+    email = data.get("email")
+    code = data.get("code")
+    new_password = data.get("new_password")
 
-    if not codigo or not nova_password:
-        return jsonify(status="error", msg="Dados incompletos")
-
-    user = User.query.filter_by(reset_code=codigo).first()
+    user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify(status="error", msg="Código inválido")
+        return jsonify(status="error"), 404
+
+    if not user.reset_code or user.reset_code != code:
+        return jsonify(status="error", msg="Código inválido"), 400
 
     if user.reset_expire < datetime.datetime.utcnow():
-        return jsonify(status="error", msg="Código expirado")
+        return jsonify(status="error", msg="Código expirado"), 400
 
-    user.password = generate_password_hash(nova_password)
+    if check_password_hash(user.password, new_password):
+        return jsonify(status="error", msg="Nova password igual à antiga"), 400
+
+    user.password = generate_password_hash(new_password)
     user.reset_code = None
     user.reset_expire = None
-
     db.session.commit()
 
-    return jsonify(
-        status="ok",
-        msg="✔ Palavra-passe alterada com sucesso"
-    )
+    return jsonify(status="ok", msg="Password alterada com sucesso")
 
 # ================= START =================
 if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
