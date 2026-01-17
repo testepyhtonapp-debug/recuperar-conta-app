@@ -1,130 +1,129 @@
-from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_mail import Mail, Message
-from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.middleware.proxy_fix import ProxyFix
-import os, random, string, datetime
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Recuperação de Conta</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .box {
+      background: white;
+      padding: 30px;
+      width: 320px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,.2);
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    button {
+      cursor: pointer;
+    }
+    .hidden {
+      display: none;
+    }
+    p {
+      text-align: center;
+      color: green;
+    }
+  </style>
+</head>
+<body>
 
-# ================= APP =================
-app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+<div class="box">
 
-# ================= CONFIG =================
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "recuperador-secret")
+  <!-- TELA INICIAL -->
+  <div id="home">
+    <h2>Recuperar Conta</h2>
+    <button onclick="show('user')">Recuperar Utilizador</button>
+    <button onclick="show('pass')">Recuperar Password</button>
+  </div>
 
-# 🔴 POSTGRESQL DO RENDER (OBRIGATÓRIO)
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+  <!-- RECUPERAR UTILIZADOR -->
+  <div id="user" class="hidden">
+    <h3>Recuperar Utilizador</h3>
+    <input id="userEmail" placeholder="Email">
+    <button onclick="recoverUser()">Enviar</button>
+    <p id="userMsg"></p>
+    <button onclick="show('home')">Voltar</button>
+  </div>
 
-# ================= EMAIL =================
-app.config["MAIL_SERVER"] = "smtp.gmail.com"
-app.config["MAIL_PORT"] = 587
-app.config["MAIL_USE_TLS"] = True
-app.config["MAIL_USERNAME"] = os.environ.get("EMAIL_USER")
-app.config["MAIL_PASSWORD"] = os.environ.get("EMAIL_PASS")
+  <!-- RECUPERAR PASSWORD -->
+  <div id="pass" class="hidden">
+    <h3>Recuperar Password</h3>
+    <input id="passEmail" placeholder="Email">
+    <button onclick="requestCode()">Enviar Código</button>
+    <p id="passMsg"></p>
+    <button onclick="show('home')">Voltar</button>
+  </div>
 
-# ================= INIT =================
-db = SQLAlchemy(app)
-mail = Mail(app)
+  <!-- CONFIRMAR PASSWORD -->
+  <div id="confirm" class="hidden">
+    <h3>Nova Password</h3>
+    <input id="code" placeholder="Código">
+    <input id="newPass" type="password" placeholder="Nova password">
+    <button onclick="confirmPass()">Confirmar</button>
+    <p id="confirmMsg"></p>
+  </div>
 
-# ================= MODEL =================
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True)
-    email = db.Column(db.String(120), unique=True)
-    password = db.Column(db.String(256))
+</div>
 
-    reset_code = db.Column(db.String(6))
-    reset_expire = db.Column(db.DateTime)
+<script>
+const API = "https://recuperadordeconta-app.onrender.com";
 
-# ================= UTILS =================
-def gen_code():
-    return "".join(random.choices(string.digits, k=6))
+function show(id) {
+  document.querySelectorAll(".box > div").forEach(d => d.classList.add("hidden"));
+  document.getElementById(id).classList.remove("hidden");
+}
 
-def send_email(to, subject, body):
-    if not app.config["MAIL_USERNAME"]:
-        return
-    msg = Message(subject, recipients=[to], body=body)
-    mail.send(msg)
+async function recoverUser() {
+  const email = userEmail.value;
+  const r = await fetch(API + "/recover/username", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({email})
+  });
 
-# ================= STATUS =================
-@app.route("/")
-def status():
-    return jsonify(service="Recuperador de Contas Online", status="ok")
+  userMsg.textContent = r.ok ? "Email enviado com sucesso!" : "Email não encontrado";
+}
 
-# ================= RECUPERAR UTILIZADOR =================
-@app.route("/recover/username", methods=["POST"])
-def recover_username():
-    data = request.json
-    email = data.get("email")
+async function requestCode() {
+  const email = passEmail.value;
+  const r = await fetch(API + "/recover/password/request", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({email})
+  });
 
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify(status="error", msg="Email não encontrado"), 404
+  if (r.ok) {
+    show("confirm");
+  } else {
+    passMsg.textContent = "Email não encontrado";
+  }
+}
 
-    send_email(
-        email,
-        "Recuperação de Utilizador",
-        f"O seu nome de utilizador é: {user.username}"
-    )
+async function confirmPass() {
+  const email = passEmail.value;
+  const code = document.getElementById("code").value;
+  const new_password = document.getElementById("newPass").value;
 
-    return jsonify(status="ok")
+  const r = await fetch(API + "/recover/password/confirm", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({email, code, new_password})
+  });
 
-# ================= PEDIR CÓDIGO PASSWORD =================
-@app.route("/recover/password/request", methods=["POST"])
-def recover_password_request():
-    data = request.json
-    email = data.get("email")
+  confirmMsg.textContent = r.ok ? "Password alterada com sucesso!" : "Erro no código";
+}
+</script>
 
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify(status="error", msg="Email não encontrado"), 404
-
-    code = gen_code()
-    user.reset_code = code
-    user.reset_expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
-    db.session.commit()
-
-    send_email(
-        email,
-        "Código de Recuperação de Password",
-        f"O seu código de recuperação é: {code}\nVálido por 5 minutos."
-    )
-
-    return jsonify(status="ok")
-
-# ================= CONFIRMAR NOVA PASSWORD =================
-@app.route("/recover/password/confirm", methods=["POST"])
-def recover_password_confirm():
-    data = request.json
-    email = data.get("email")
-    code = data.get("code")
-    new_password = data.get("new_password")
-
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify(status="error"), 404
-
-    if not user.reset_code or user.reset_code != code:
-        return jsonify(status="error", msg="Código inválido"), 400
-
-    if user.reset_expire < datetime.datetime.utcnow():
-        return jsonify(status="error", msg="Código expirado"), 400
-
-    if check_password_hash(user.password, new_password):
-        return jsonify(status="error", msg="Nova password igual à antiga"), 400
-
-    user.password = generate_password_hash(new_password)
-    user.reset_code = None
-    user.reset_expire = None
-    db.session.commit()
-
-    return jsonify(status="ok", msg="Password alterada com sucesso")
-
-# ================= START =================
-if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+</body>
+</html>
