@@ -73,38 +73,6 @@ def gen_code():
 @app.route("/")
 def home():
     return "<h2>Servidor Online ✅</h2><p>Login Google e API ativos.</p>"
-
-# ================= REGISTER =================
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
-    if User.query.filter(
-        (User.username == data["username"]) | (User.email == data["email"])
-    ).first():
-        return jsonify(status="error", msg="Conta já existe")
-
-    user = User(
-        username=data["username"],
-        email=data["email"],
-        password=generate_password_hash(data["password"]),
-        provider="local"
-    )
-    db.session.add(user)
-    db.session.commit()
-    return jsonify(status="ok")
-
-# ================= LOGIN =================
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.json
-    user = User.query.filter_by(username=data["username"]).first()
-
-    if not user or not check_password_hash(user.password, data["password"]):
-        return jsonify(status="error", msg="Dados inválidos")
-
-    session["user_id"] = user.id
-    return jsonify(status="ok")
-
 # ================= GOOGLE LOGIN =================
 @app.route("/login/google")
 def login_google():
